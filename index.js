@@ -1,6 +1,6 @@
 import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
+// import cors from "cors";
+// import dotenv from "dotenv";
 // import mongoose from "mongoose";
 
 // Middlewares
@@ -16,13 +16,13 @@ import dotenv from "dotenv";
 // import AuthRoutes from "./routes/AuthRoutes.js";
 // import CounterRoutes from "./routes/CounterRoutes.js";
 // import NewsUpdateRoutes from "./routes/NewsUpdateRoutes.js";
-import { allowedOrigins } from "./utils/AllowedOrigins.js";
+// import { allowedOrigins } from "./utils/AllowedOrigins.js";
 
 // Cloudinary
 // import { v2 as cloudinary } from "cloudinary";
 // import fileUpload from "express-fileupload";
 
-dotenv.config();
+// dotenv.config();
 
 const app = express();
 
@@ -32,16 +32,16 @@ const app = express();
 // connectDB();
 
 // === Global Middlewares ===
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// app.use(express.json());
+// app.use(express.urlencoded({ extended: true }));
 
-app.use(
-   cors({
-      origin: allowedOrigins,
-      credentials: true,
-      methods: ["POST", "GET", "PATCH", "DELETE"],
-   }),
-);
+// app.use(
+//    cors({
+//       origin: allowedOrigins,
+//       credentials: true,
+//       methods: ["POST", "GET", "PATCH", "DELETE"],
+//    }),
+// );
 
 // === Cloudinary Configuration ===
 // cloudinary.config({
