@@ -10,7 +10,7 @@ import dotenv from "dotenv";
 // import SecurityHeaders from "./middlewares/HelmetMiddleware.js";
 
 // DB Connection
-import connectDB from "./config/DB.js";
+// import connectDB from "./config/DB.js";
 
 // Routes
 // import AuthRoutes from "./routes/AuthRoutes.js";
@@ -29,7 +29,7 @@ const app = express();
 // app.use(SecurityHeaders);
 
 // === MongoDB Connection ===
-connectDB();
+// connectDB();
 
 // === Global Middlewares ===
 app.use(express.json());
