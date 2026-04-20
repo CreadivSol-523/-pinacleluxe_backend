@@ -17,6 +17,7 @@ import AuthRoutes from "./routes/AuthRoutes.js";
 import CounterRoutes from "./routes/CounterRoutes.js";
 import NewsUpdateRoutes from "./routes/NewsUpdateRoutes.js";
 import CategoryRoutes from "./routes/CategoryRoutes.js";
+import ProductRoutes from "./routes/ProductRoutes.js";
 import { allowedOrigins } from "./utils/AllowedOrigins.js";
 
 // Cloudinary
@@ -40,7 +41,7 @@ app.use(
    cors({
       origin: allowedOrigins,
       credentials: true,
-      methods: ["POST", "GET", "PATCH", "DELETE"],
+      methods: ["POST", "GET", "PATCH", "PUT", "DELETE"],
    }),
 );
 
@@ -72,7 +73,8 @@ app.use(ErrorLogger);
 app.use("/api", AuthRoutes);
 app.use("/api/news", NewsUpdateRoutes);
 app.use("/api/counter", CounterRoutes);
-app.use("/api/category", CategoryRoutes)
+app.use("/api/category", CategoryRoutes);
+app.use("/api/product", ProductRoutes);
 
 // === Error Handler
 app.use(ErrorHandler);
