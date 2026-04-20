@@ -25,7 +25,8 @@
     "mongoose": "^8.0.0",
     "multer": "^2.0.1",
     "nodemailer": "^7.0.3",
-    "redis": "^5.1.1"
+    "redis": "^5.1.1",
+    "slugify": "^1.6.9"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

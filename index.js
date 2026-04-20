@@ -16,6 +16,7 @@ import connectDB from "./config/DB.js";
 import AuthRoutes from "./routes/AuthRoutes.js";
 import CounterRoutes from "./routes/CounterRoutes.js";
 import NewsUpdateRoutes from "./routes/NewsUpdateRoutes.js";
+import CategoryRoutes from "./routes/CategoryRoutes.js";
 import { allowedOrigins } from "./utils/AllowedOrigins.js";
 
 // Cloudinary
@@ -45,7 +46,7 @@ app.use(
 
 // === Cloudinary Configuration ===
 cloudinary.config({
-   cloud_name: process.env.CLOUDINARY_Cloud,
+   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
    api_secret: process.env.CLOUDINARY_API_SECRET,
    api_key: process.env.CLOUDINARY_API_KEY,
 });
@@ -71,6 +72,7 @@ app.use(ErrorLogger);
 app.use("/api", AuthRoutes);
 app.use("/api/news", NewsUpdateRoutes);
 app.use("/api/counter", CounterRoutes);
+app.use("/api/category", CategoryRoutes)
 
 // === Error Handler
 app.use(ErrorHandler);
