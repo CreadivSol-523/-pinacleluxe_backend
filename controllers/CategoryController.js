@@ -81,17 +81,14 @@ export const getCategories = async (req, res) => {
 
         const match = {};
 
-        // 🔍 Search
         if (search) {
             match.name = { $regex: search, $options: "i" };
         }
 
-        // ✅ Active filter
         if (isActive !== undefined) {
             match.isActive = isActive === "true";
         }
 
-        // 🌳 Parent filter
         if (parentId === "null") {
             match.parentId = null;
         } else if (parentId) {
@@ -100,28 +97,37 @@ export const getCategories = async (req, res) => {
 
         const skip = (Number(page) - 1) * Number(limit);
 
-        const categories = await CategoryModel.aggregate([
-            { $match: match },
+        // Sari categories ek baar fetch karo (match ke saath)
+        const allCategories = await CategoryModel.find(match)
+            .sort({ createdAt: -1 })
+            .lean();
 
-            { $sort: { createdAt: -1 } },
+        // Map banao id => category
+        const categoryMap = {};
+        allCategories.forEach(cat => {
+            cat.children = [];
+            categoryMap[cat._id.toString()] = cat;
+        });
 
-            { $skip: skip },
-            { $limit: Number(limit) },
+        // Tree build karo
+        const roots = [];
+        allCategories.forEach(cat => {
+            if (cat.parentId) {
+                const parent = categoryMap[cat.parentId.toString()];
+                if (parent) {
+                    parent.children.push(cat);
+                } else {
+                    // Parent is filtered out (e.g. inactive) — treat as root
+                    roots.push(cat);
+                }
+            } else {
+                roots.push(cat);
+            }
+        });
 
-            {
-                $graphLookup: {
-                    from: "categories",
-                    startWith: "$_id",
-                    connectFromField: "_id",
-                    connectToField: "parentId",
-                    as: "children",
-                    maxDepth: 5,
-                    restrictSearchWithMatch: { isActive: true },
-                },
-            },
-        ]);
-
-        const total = await CategoryModel.countDocuments(match);
+        // Pagination roots pe lagao
+        const total = roots.length;
+        const paginatedRoots = roots.slice(skip, skip + Number(limit));
 
         res.json({
             success: true,
@@ -129,9 +135,9 @@ export const getCategories = async (req, res) => {
                 total,
                 page: Number(page),
                 limit: Number(limit),
-                pages: Math.ceil(total / limit),
+                pages: Math.ceil(total / Number(limit)),
             },
-            categories,
+            categories: paginatedRoots,
         });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -194,92 +200,74 @@ export const getSingleCategoryTree = async (req, res) => {
 
 export const updateCategory = async (req, res) => {
     try {
-        let { name, isActive, parentId } = req.body;
+        const { name, isActive } = req.body;
 
-        const category = await CategoryModel.findById(req.params.id);
+        // Normalize parentId — only if explicitly sent in body
+        const hasParentId = Object.prototype.hasOwnProperty.call(req.body, "parentId");
+        let parentId = hasParentId ? req.body.parentId : undefined;
 
-        if (!category) {
-            return res.status(404).json({
-                success: false,
-                message: "Category not found",
-            });
-        }
-
-        // ✅ FIX: normalize parentId
-        if (!parentId || parentId === "null" || parentId === "") {
+        if (hasParentId && (!parentId || parentId === "null" || parentId === "")) {
             parentId = null;
         }
 
-        // ❌ Prevent self-parent
-        if (parentId && parentId === req.params.id) {
-            return res.status(400).json({
-                success: false,
-                message: "Category cannot be its own parent",
-            });
+        // Fetch category
+        const category = await CategoryModel.findById(req.params.id);
+        if (!category) {
+            return res.status(404).json({ success: false, message: "Category not found" });
         }
 
-        // ✅ Validate parent
+        // Prevent self-parent
+        if (parentId && parentId === req.params.id) {
+            return res.status(400).json({ success: false, message: "Category cannot be its own parent" });
+        }
+
+        // Validate parent exists
         if (parentId) {
             const parentExists = await CategoryModel.exists({ _id: parentId });
-
             if (!parentExists) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Parent category not found",
-                });
+                return res.status(400).json({ success: false, message: "Parent category not found" });
             }
         }
 
-        let imageUrl = category.image;
-
-        if (req.files && req.files.image) {
-            // delete old image
+        // Handle image upload
+        if (req.files?.image) {
             if (category.image) {
-                const publicId = category.image
-                    .split("/")
-                    .pop()
-                    .split(".")[0];
-
+                const publicId = category.image.split("/").pop().split(".")[0];
                 await cloudinary.uploader.destroy(`categories/${publicId}`);
             }
 
-            const file = req.files.image;
-
-            const upload = await cloudinary.uploader.upload(file.tempFilePath, {
+            const upload = await cloudinary.uploader.upload(req.files.image.tempFilePath, {
                 folder: "categories",
             });
 
-            imageUrl = upload.secure_url;
+            category.image = upload.secure_url;
         }
 
-        // 🔄 Update name + slug
+        // Update name + slug
         if (name) {
             const baseSlug = slugify(name, { lower: true, strict: true });
             let uniqueSlug = baseSlug;
             let count = 1;
-            while (
-                await CategoryModel.findOne({
-                    slug: uniqueSlug,
-                    _id: { $ne: category._id },
-                })
-            ) {
+            while (await CategoryModel.findOne({ slug: uniqueSlug, _id: { $ne: category._id } })) {
                 uniqueSlug = `${baseSlug}-${count++}`;
             }
             category.name = name;
             category.slug = uniqueSlug;
         }
 
-        // ✏️ Apply updates
-        category.image = imageUrl;
-        category.isActive = isActive ?? category.isActive;
-        category.parentId = parentId;
+        // Update isActive — only if sent
+        if (isActive !== undefined) {
+            category.isActive = isActive;
+        }
+
+        // Update parentId — only if explicitly sent in body
+        if (hasParentId) {
+            category.parentId = parentId;
+        }
 
         await category.save();
 
-        res.json({
-            success: true,
-            category,
-        });
+        res.json({ success: true, category });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
