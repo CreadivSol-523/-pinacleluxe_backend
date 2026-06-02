@@ -347,11 +347,20 @@ const swaggerSpec = {
                 type: "object",
                 properties: {
                   name: { type: "string" },
-                  basePrice: { type: "number" },
+                  pricing: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        region: { type: "string", description: "Region code or ObjectId" },
+                        price: { type: "number" },
+                        discountMode: { type: "string", enum: ["percentage", "static"] },
+                        discountValue: { type: "number" }
+                      }
+                    }
+                  },
                   categories: { type: "array", items: { type: "string" } },
                   isVariable: { type: "boolean" },
-                  discountMode: { type: "string" },
-                  discountValue: { type: "number" },
                   stock: { type: "number" },
                   badge: { type: "string" },
                   description: { type: "string" },
@@ -394,11 +403,20 @@ const swaggerSpec = {
                 properties: {
                   name: { type: "string" },
                   description: { type: "string" },
-                  basePrice: { type: "number" },
+                  pricing: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        region: { type: "string", description: "Region code or ObjectId" },
+                        price: { type: "number" },
+                        discountMode: { type: "string", enum: ["percentage", "static"] },
+                        discountValue: { type: "number" }
+                      }
+                    }
+                  },
                   badge: { type: "string" },
                   isVariable: { type: "boolean" },
-                  discountMode: { type: "string" },
-                  discountValue: { type: "number" },
                   stock: { type: "number" },
                   categories: { type: "array", items: { type: "string" } },
                   productImages: { type: "string", format: "binary" },

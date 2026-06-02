@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import slugify from "slugify";
 import ProductModel from "../models/ProductSchema.js";
 import CategoryModel from "../models/CategorySchema.js";
+import RegionModel from "../models/RegionSchema.js";
 import {
     uploadMany,
     destroyCloudinaryUrls,
@@ -19,17 +20,15 @@ export const createProduct = async (req, res) => {
             categories,
             badge,
             isVariable,
-            basePrice,
-            discountMode,
-            discountValue,
+            pricing,
             variants,
             stock,
         } = req.body;
 
-        if (!name || !basePrice) {
+        if (!name) {
             return res.status(400).json({
                 success: false,
-                message: "Name and basePrice are required",
+                message: "Name is required",
             });
         }
 
@@ -53,6 +52,62 @@ export const createProduct = async (req, res) => {
                 success: false,
                 message: "Invalid categories",
             });
+        }
+
+        if (typeof pricing === "string") {
+            pricing = JSON.parse(pricing);
+        }
+
+        if (pricing != null && !Array.isArray(pricing)) {
+            return res.status(400).json({
+                success: false,
+                message: "pricing must be an array",
+            });
+        }
+
+        if (isVariable === false && (!pricing || pricing.length === 0)) {
+            return res.status(400).json({
+                success: false,
+                message: "Non-variable products must include pricing",
+            });
+        }
+
+        // Validate and resolve top-level pricing region references to ObjectIds
+        if (Array.isArray(pricing) && pricing.length > 0) {
+            const processedPricing = [];
+            for (const entry of pricing) {
+                const { region: regionRef, price: regionPrice, discountMode, discountValue } = entry || {};
+
+                if (!regionRef || regionPrice == null) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Each pricing entry must include region and price",
+                    });
+                }
+
+                let region;
+                if (mongoose.Types.ObjectId.isValid(regionRef)) {
+                    region = await RegionModel.findById(regionRef);
+                } else if (typeof regionRef === "string") {
+                    region = await RegionModel.findOne({ code: regionRef.toUpperCase().trim() });
+                }
+
+                if (!region) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Region not found: ${regionRef}`,
+                    });
+                }
+
+                processedPricing.push({
+                    region: region._id,
+                    price: Number(regionPrice),
+                    discountMode,
+                    discountValue: discountValue || 0,
+                });
+            }
+
+            pricing = processedPricing;
         }
 
         if (typeof variants === "string") {
@@ -101,9 +156,7 @@ export const createProduct = async (req, res) => {
             categories,
             badge,
             isVariable,
-            basePrice,
-            discountMode,
-            discountValue,
+            pricing,
             variants: processedVariants,
             stock,
             images,
@@ -262,6 +315,55 @@ export const updateProduct = async (req, res) => {
 
         if (typeof updateData.variants === "string") {
             updateData.variants = JSON.parse(updateData.variants);
+        }
+
+        if (typeof updateData.pricing === "string") {
+            updateData.pricing = JSON.parse(updateData.pricing);
+        }
+
+        if (updateData.pricing != null && !Array.isArray(updateData.pricing)) {
+            return res.status(400).json({
+                success: false,
+                message: "pricing must be an array",
+            });
+        }
+
+        // If pricing provided in update, resolve region refs
+        if (Array.isArray(updateData.pricing) && updateData.pricing.length > 0) {
+            const processedPricing = [];
+            for (const entry of updateData.pricing) {
+                const { region: regionRef, price: regionPrice, discountMode, discountValue } = entry || {};
+
+                if (!regionRef || regionPrice == null) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Each pricing entry must include region and price",
+                    });
+                }
+
+                let region;
+                if (mongoose.Types.ObjectId.isValid(regionRef)) {
+                    region = await RegionModel.findById(regionRef);
+                } else if (typeof regionRef === "string") {
+                    region = await RegionModel.findOne({ code: regionRef.toUpperCase().trim() });
+                }
+
+                if (!region) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Region not found: ${regionRef}`,
+                    });
+                }
+
+                processedPricing.push({
+                    region: region._id,
+                    price: Number(regionPrice),
+                    discountMode,
+                    discountValue: discountValue || 0,
+                });
+            }
+
+            updateData.pricing = processedPricing;
         }
 
         if (updateData.variants) {
