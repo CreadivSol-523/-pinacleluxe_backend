@@ -1,6 +1,4 @@
-import mongoose from "mongoose";
 import connectedUsers from "./ConnectedUsers.js";
-import { UpdateGlobalCounter } from "./RealtimeCounter.js";
 
 const SocketWrapper = (io) => {
   io.on("connection", (socket) => {
@@ -22,9 +20,6 @@ const SocketWrapper = (io) => {
 
       console.log(`${userID} connected from device ${deviceId}`);
     });
-
-
-    UpdateGlobalCounter(userID, socket, io)
 
     socket.on("disconnect", () => {
       const { userID, deviceId } = socket;

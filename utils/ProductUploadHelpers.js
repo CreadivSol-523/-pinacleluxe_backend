@@ -1,4 +1,6 @@
 import { v2 as cloudinary } from "cloudinary";
+import mongoose from "mongoose";
+import RegionModel from "../models/RegionSchema.js";
 
 // Images: only req.files — field names: productImages, v{variantIndex}_c{colorIndex}
 
@@ -17,6 +19,19 @@ export async function uploadMany(fileOrArray, folder) {
         urls.push(result.secure_url);
     }
     return urls;
+}
+
+async function resolveRegionId(regionRef) {
+    if (!regionRef) return null;
+
+    let region;
+    if (mongoose.Types.ObjectId.isValid(regionRef)) {
+        region = await RegionModel.findById(regionRef);
+    } else if (typeof regionRef === "string") {
+        region = await RegionModel.findOne({ code: regionRef.toUpperCase().trim() });
+    }
+
+    return region?._id ?? null;
 }
 
 function publicIdFromSecureUrl(url) {
@@ -69,16 +84,54 @@ export async function buildProcessedVariants(variants, files) {
         const variant = variants[vi];
         const { material, price, colors } = variant;
 
-        if (!material || !price) {
+        if (!material || price == null) {
             throw Object.assign(
                 new Error("Each variant must have material and price"),
                 { status: 400 }
             );
         }
 
+        if (!Array.isArray(price)) {
+            throw Object.assign(new Error("price must be an array"), {
+                status: 400,
+            });
+        }
+
         if (colors != null && !Array.isArray(colors)) {
             throw Object.assign(new Error("colors must be an array"), {
                 status: 400,
+            });
+        }
+
+        const processedPrice = [];
+        for (const priceItem of price) {
+            const {
+                region: regionRef,
+                price: regionPrice,
+                discountMode,
+                discountValue,
+            } = priceItem;
+
+            if (!regionRef || regionPrice == null) {
+                throw Object.assign(
+                    new Error("Each price entry must include a region and price"),
+                    { status: 400 }
+                );
+            }
+
+            const regionId = await resolveRegionId(regionRef);
+            if (!regionId) {
+                throw Object.assign(
+                    new Error(`Region not found: ${regionRef}`),
+                    { status: 400 }
+                );
+            }
+
+            processedPrice.push({
+                region: regionId,
+                price: Number(regionPrice),
+                discountMode,
+                discountValue: discountValue || 0,
             });
         }
 
@@ -102,7 +155,7 @@ export async function buildProcessedVariants(variants, files) {
 
         processedVariants.push({
             material,
-            price,
+            price: processedPrice,
             colors: processedColors,
         });
     }
@@ -123,16 +176,54 @@ export async function buildProcessedVariantsForUpdate(
         const variant = variants[vi];
         const { material, price, colors } = variant;
 
-        if (!material || !price) {
+        if (!material || price == null) {
             throw Object.assign(
                 new Error("Each variant must have material and price"),
                 { status: 400 }
             );
         }
 
+        if (!Array.isArray(price)) {
+            throw Object.assign(new Error("price must be an array"), {
+                status: 400,
+            });
+        }
+
         if (colors != null && !Array.isArray(colors)) {
             throw Object.assign(new Error("colors must be an array"), {
                 status: 400,
+            });
+        }
+
+        const processedPrice = [];
+        for (const priceItem of price) {
+            const {
+                region: regionRef,
+                price: regionPrice,
+                discountMode,
+                discountValue,
+            } = priceItem;
+
+            if (!regionRef || regionPrice == null) {
+                throw Object.assign(
+                    new Error("Each price entry must include a region and price"),
+                    { status: 400 }
+                );
+            }
+
+            const regionId = await resolveRegionId(regionRef);
+            if (!regionId) {
+                throw Object.assign(
+                    new Error(`Region not found: ${regionRef}`),
+                    { status: 400 }
+                );
+            }
+
+            processedPrice.push({
+                region: regionId,
+                price: Number(regionPrice),
+                discountMode,
+                discountValue: discountValue || 0,
             });
         }
 
@@ -157,7 +248,7 @@ export async function buildProcessedVariantsForUpdate(
 
         processedVariants.push({
             material,
-            price,
+            price: processedPrice,
             colors: processedColors,
         });
     }

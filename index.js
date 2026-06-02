@@ -14,10 +14,11 @@ import connectDB from "./config/DB.js";
 
 // Routes
 import AuthRoutes from "./routes/AuthRoutes.js";
-import CounterRoutes from "./routes/CounterRoutes.js";
-import NewsUpdateRoutes from "./routes/NewsUpdateRoutes.js";
 import CategoryRoutes from "./routes/CategoryRoutes.js";
 import ProductRoutes from "./routes/ProductRoutes.js";
+import RegionRoutes from "./routes/RegionRoutes.js";
+import swaggerUi from "swagger-ui-express";
+import swaggerSpec from "./swagger.js";
 import { allowedOrigins } from "./utils/AllowedOrigins.js";
 
 // Cloudinary
@@ -59,6 +60,9 @@ app.use(
    }),
 );
 
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get("/api/docs.json", (req, res) => res.json(swaggerSpec));
+
 app.get("/", (req, res) => {
    res.status(200).json({ heath: "Ok" });
 });
@@ -71,10 +75,9 @@ app.use(ErrorLogger);
 
 // === Routes ===
 app.use("/api", AuthRoutes);
-app.use("/api/news", NewsUpdateRoutes);
-app.use("/api/counter", CounterRoutes);
 app.use("/api/category", CategoryRoutes);
 app.use("/api/product", ProductRoutes);
+app.use("/api/region", RegionRoutes);
 
 // === Error Handler
 app.use(ErrorHandler);

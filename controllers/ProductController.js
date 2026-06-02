@@ -146,6 +146,7 @@ export const getProducts = async (req, res) => {
 
         const products = await ProductModel.find(query)
             .populate("categories")
+            .populate("variants.price.region")
             .skip(skip)
             .limit(limitNum)
             .sort({ createdAt: -1 });
@@ -169,7 +170,8 @@ export const getProducts = async (req, res) => {
 export const getSingleProduct = async (req, res) => {
     try {
         const product = await ProductModel.findById(req.params.id)
-            .populate("categories");
+            .populate("categories")
+            .populate("variants.price.region");
 
         if (!product) {
             return res.status(404).json({

@@ -1,0 +1,317 @@
+{
+  "info": {
+    "name": "PinacleLuxe Backend API",
+    "_postman_id": "f1bba6f9-3d1f-438b-a6c1-9b0f8bc49004",
+    "description": "Collection for PinacleLuxe backend endpoints. Change variable values after import.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Category",
+      "item": [
+        {
+          "name": "Create Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/category",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "category"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Luxury Furniture\",\n  \"isActive\": true,\n  \"parentId\": null\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/category?page=1&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "category"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Category By ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/category/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "category",
+                "{{categoryId}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Region",
+      "item": [
+        {
+          "name": "Create Region US",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/region",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "region"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"US\",\n  \"name\": \"United States\",\n  \"currency\": \"USD\",\n  \"description\": \"US store region\",\n  \"isActive\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Region PK",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/region",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "region"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"PK\",\n  \"name\": \"Pakistan\",\n  \"currency\": \"PKR\",\n  \"description\": \"PK store region\",\n  \"isActive\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Regions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/region?page=1&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "region"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Product",
+      "item": [
+        {
+          "name": "Create Non-variable Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/product",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "product"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Classic Sofa\",\n  \"description\": \"A high-end leather sofa for living rooms.\",\n  \"categories\": [\"{{categoryId}}\"],\n  \"badge\": \"Best Seller\",\n  \"isVariable\": false,\n  \"basePrice\": 249.99,\n  \"discountMode\": \"static\",\n  \"discountValue\": 20,\n  \"variants\": [],\n  \"stock\": 15\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Variable Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/product",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "product"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Premium Jewelry Set\",\n  \"description\": \"Customizable jewelry pieces available by material and color.\",\n  \"categories\": [\"{{categoryId}}\"],\n  \"badge\": \"Limited Edition\",\n  \"isVariable\": true,\n  \"basePrice\": 0,\n  \"discountMode\": \"percentage\",\n  \"discountValue\": 0,\n  \"variants\": [\n    {\n      \"material\": \"Gold\",\n      \"price\": [\n        {\n          \"region\": \"US\",\n          \"price\": 150.0,\n          \"discountMode\": \"percentage\",\n          \"discountValue\": 10\n        },\n        {\n          \"region\": \"PK\",\n          \"price\": 50000,\n          \"discountMode\": \"static\",\n          \"discountValue\": 2000\n        }\n      ],\n      \"colors\": [\n        {\n          \"hex\": \"#FFD700\",\n          \"images\": []\n        }\n      ]\n    }\n  ],\n  \"stock\": 10\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/product?page=1&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "product"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product By ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/product/{{productIdVariable}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "product",
+                "{{productIdVariable}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/product/{{productIdVariable}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "product",
+                "{{productIdVariable}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"badge\": \"Updated Offer\",\n  \"stock\": 8\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/product/{{productIdVariable}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "product",
+                "{{productIdVariable}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
