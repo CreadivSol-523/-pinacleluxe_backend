@@ -2,7 +2,10 @@ import mongoose from "mongoose";
 
 const VariantColorSchema = new mongoose.Schema(
   {
-    hex: { type: String, trim: true },
+    hex: {
+      code: { type: String, trim: true },
+      colorName: { type: String, trim: true },
+    },
     images: [{ type: String, trim: true }],
   },
   { _id: false },
@@ -82,6 +85,10 @@ const ProductSchema = new mongoose.Schema(
       default: [],
     },
     images: {
+      type: [{ type: String, trim: true }],
+      default: [],
+    },
+    thumbnail: {
       type: [{ type: String, trim: true }],
       default: [],
     },
