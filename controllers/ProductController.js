@@ -23,6 +23,7 @@ export const createProduct = async (req, res) => {
             pricing,
             variants,
             stock,
+            thumbnail,
         } = req.body;
 
         if (!name) {
@@ -139,6 +140,10 @@ export const createProduct = async (req, res) => {
             req.files?.productImages,
             "products"
         );
+        const thumbnails = await uploadMany(
+            req.files?.thumbnails || req.files?.thumbnail,
+            "products/thumbnails"
+        );
 
         const slug = slugify(name, { lower: true, strict: true });
 
@@ -160,6 +165,7 @@ export const createProduct = async (req, res) => {
             variants: processedVariants,
             stock,
             images,
+            thumbnail: thumbnails,
         });
 
         res.status(201).json({
@@ -246,6 +252,7 @@ export const updateProduct = async (req, res) => {
     try {
         const updateData = { ...req.body };
         delete updateData.images;
+        delete updateData.thumbnail;
 
         const product = await ProductModel.findById(req.params.id);
 
@@ -406,6 +413,17 @@ export const updateProduct = async (req, res) => {
             if (newProductImages.length > 0) {
                 await destroyCloudinaryUrls(product.images || []);
                 updateData.images = newProductImages;
+            }
+        }
+
+        if (req.files?.thumbnails || req.files?.thumbnail) {
+            const newThumbnails = await uploadMany(
+                req.files.thumbnails || req.files.thumbnail,
+                "products/thumbnails"
+            );
+            if (newThumbnails.length > 0) {
+                await destroyCloudinaryUrls(product.thumbnail || []);
+                updateData.thumbnail = newThumbnails;
             }
         }
 
