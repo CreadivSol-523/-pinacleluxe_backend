@@ -13,7 +13,6 @@ import SecurityHeaders from "./middlewares/HelmetMiddleware.js";
 import connectDB from "./config/DB.js";
 
 // Routes
-import AuthRoutes from "./routes/AuthRoutes.js";
 import CategoryRoutes from "./routes/CategoryRoutes.js";
 import ProductRoutes from "./routes/ProductRoutes.js";
 import RegionRoutes from "./routes/RegionRoutes.js";
@@ -74,7 +73,6 @@ app.use(RateLimiter);
 app.use(ErrorLogger);
 
 // === Routes ===
-app.use("/api", AuthRoutes);
 app.use("/api/category", CategoryRoutes);
 app.use("/api/product", ProductRoutes);
 app.use("/api/region", RegionRoutes);
