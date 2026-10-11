@@ -15,6 +15,7 @@ import connectDB from "./config/DB.js";
 // Routes
 import CategoryRoutes from "./routes/CategoryRoutes.js";
 import ProductRoutes from "./routes/ProductRoutes.js";
+import OrderRoutes from "./routes/OrderRoutes.js";
 import RegionRoutes from "./routes/RegionRoutes.js";
 import WebsiteSectionRouter from "./routes/WebsiteSectionRouter.js";
 import swaggerUi from "swagger-ui-express";
@@ -76,6 +77,7 @@ app.use(ErrorLogger);
 // === Routes ===
 app.use("/api/category", CategoryRoutes);
 app.use("/api/product", ProductRoutes);
+app.use("/api/order", OrderRoutes);
 app.use("/api/region", RegionRoutes);
 app.use("/api/webSection", WebsiteSectionRouter);
 

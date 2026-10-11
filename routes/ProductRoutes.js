@@ -1,13 +1,20 @@
 import express from "express";
-import { createProduct, getProducts, getSingleProduct, updateProduct, deleteProduct, getProductsFilter } from "../controllers/ProductController.js";
+import {
+    getProducts,
+    getSingleProduct,
+    createProduct,
+    updateProduct,
+    deleteProduct,
+    adjustStock,
+} from "../controllers/ProductController.js";
 
 const router = express.Router();
 
-router.post("/", createProduct);
 router.get("/", getProducts);
-router.get("/filter", getProductsFilter);
 router.get("/:id", getSingleProduct);
+router.post("/", createProduct);
 router.put("/:id", updateProduct);
 router.delete("/:id", deleteProduct);
+router.patch("/:id/stock", adjustStock); // Inventory Stock Adjustment endpoint
 
 export default router;

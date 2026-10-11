@@ -75,11 +75,7 @@ export function collectVariantImageUrls(variants) {
 }
 
 export function collectProductImageUrls(doc) {
-<<<<<<< HEAD
-    return [...(doc.images || []), ...(doc.thumbnail || []), ...collectVariantImageUrls(doc.variants)];
-=======
    return [...(doc.images || []), ...(doc.thumbnail || []), ...collectVariantImageUrls(doc.variants)];
->>>>>>> 19b99d024b101a4dc2dfdef3c2b896806b9ff0dc
 }
 
 export async function buildProcessedVariants(variants, files) {
@@ -136,7 +132,7 @@ export async function buildProcessedVariants(variants, files) {
             if (typeof hexVal === "string") {
                hexObj = { code: hexVal.trim(), colorName: String(color.colorName || "").trim() };
             } else if (hexVal && typeof hexVal === "object") {
-               hexObj = { code: String(hexVal.code || "").trim(), colorName: String(hexVal.colorName || "").trim() };
+               hexObj = { code: String(hexVal.code || "").trim(), colorName: String(color.colorName || "").trim() };
             } else {
                throw Object.assign(new Error("Each color must include a hex.code"), { status: 400 });
             }
@@ -154,39 +150,7 @@ export async function buildProcessedVariants(variants, files) {
       });
    }
 
-<<<<<<< HEAD
-        const processedColors = [];
-
-        if (Array.isArray(colors)) {
-            for (let ci = 0; ci < colors.length; ci++) {
-                const color = colors[ci];
-                const hexVal = color.hex;
-                let hexObj;
-                if (typeof hexVal === "string") {
-                    hexObj = { code: hexVal.trim(), colorName: String(color.colorName || "").trim() };
-                } else if (hexVal && typeof hexVal === "object") {
-                    hexObj = { code: String(hexVal.code || "").trim(), colorName: String(hexVal.colorName || "").trim() };
-                } else {
-                    throw Object.assign(new Error("Each color must include a hex.code"), { status: 400 });
-                }
-
-                const fieldKey = `v${vi}_c${ci}`;
-                const images = await uploadMany(files?.[fieldKey], "products/variants");
-                processedColors.push({ hex: hexObj, images });
-            }
-        }
-
-        processedVariants.push({
-            material,
-            price: processedPrice,
-            colors: processedColors,
-        });
-    }
-
-    return processedVariants;
-=======
    return processedVariants;
->>>>>>> 19b99d024b101a4dc2dfdef3c2b896806b9ff0dc
 }
 
 /** Update: keep existing color images when no new files for that slot; new files replace that slot only. */
@@ -245,7 +209,7 @@ export async function buildProcessedVariantsForUpdate(variants, files, previousV
             if (typeof hexVal === "string") {
                hexObj = { code: hexVal.trim(), colorName: String(color.colorName || "").trim() };
             } else if (hexVal && typeof hexVal === "object") {
-               hexObj = { code: String(hexVal.code || "").trim(), colorName: String(hexVal.colorName || "").trim() };
+               hexObj = { code: String(hexVal.code || "").trim(), colorName: String(color.colorName || "").trim() };
             } else {
                throw Object.assign(new Error("Each color must include a hex.code"), { status: 400 });
             }
@@ -265,39 +229,5 @@ export async function buildProcessedVariantsForUpdate(variants, files, previousV
       });
    }
 
-<<<<<<< HEAD
-        const processedColors = [];
-
-        if (Array.isArray(colors)) {
-            for (let ci = 0; ci < colors.length; ci++) {
-                const color = colors[ci];
-                const hexVal = color.hex;
-                let hexObj;
-                if (typeof hexVal === "string") {
-                    hexObj = { code: hexVal.trim(), colorName: String(color.colorName || "").trim() };
-                } else if (hexVal && typeof hexVal === "object") {
-                    hexObj = { code: String(hexVal.code || "").trim(), colorName: String(hexVal.colorName || "").trim() };
-                } else {
-                    throw Object.assign(new Error("Each color must include a hex.code"), { status: 400 });
-                }
-
-                const fieldKey = `v${vi}_c${ci}`;
-                const uploaded = await uploadMany(files?.[fieldKey], "products/variants");
-                const preserved = prev[vi]?.colors?.[ci]?.images?.filter(Boolean) ?? [];
-                const images = uploaded.length > 0 ? uploaded : [...preserved];
-                processedColors.push({ hex: hexObj, images });
-            }
-        }
-
-        processedVariants.push({
-            material,
-            price: processedPrice,
-            colors: processedColors,
-        });
-    }
-
-    return processedVariants;
-=======
    return processedVariants;
->>>>>>> 19b99d024b101a4dc2dfdef3c2b896806b9ff0dc
 }

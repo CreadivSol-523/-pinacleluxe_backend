@@ -1,0 +1,63 @@
+{
+  "regions": [
+    {
+      "code": "PK",
+      "name": "Pakistan",
+      "currency": "PKR",
+      "description": "Pakistan Region",
+      "isActive": true
+    },
+    {
+      "code": "US",
+      "name": "United States",
+      "currency": "USD",
+      "description": "United States Region",
+      "isActive": true
+    },
+    {
+      "code": "UK",
+      "name": "United Kingdom",
+      "currency": "GBP",
+      "description": "United Kingdom Region",
+      "isActive": true
+    }
+  ],
+  "categories": [
+    {
+      "name": "Totes",
+      "slug": "totes",
+      "image": "/Dummy/Home/CategoryImg.png",
+      "isActive": true
+    },
+    {
+      "name": "Jewelry",
+      "slug": "jewelry",
+      "image": "/Dummy/Home/CategoryImg2.png",
+      "isActive": true
+    },
+    {
+      "name": "Shoulder Bags",
+      "slug": "shoulder-bags",
+      "image": "/Dummy/Home/CategoryImg3.png",
+      "isActive": true
+    },
+    {
+      "name": "Small Leather Goods",
+      "slug": "small-leather-goods",
+      "image": "/Dummy/Home/CategoryImg4.png",
+      "isActive": true
+    },
+    {
+      "name": "Crossbody Bags",
+      "slug": "crossbody-bags",
+      "image": "/Dummy/Home/CategoryImg.png",
+      "isActive": true
+    },
+    {
+      "name": "Backpacks",
+      "slug": "backpacks",
+      "image": "/Dummy/Home/CategoryImg2.png",
+      "isActive": true
+    }
+  ]
+}
