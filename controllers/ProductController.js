@@ -7,10 +7,8 @@ import { uploadMany, destroyCloudinaryUrls, collectProductImageUrls, collectVari
 
 export const createProduct = async (req, res) => {
    try {
-      let { name, description, categories, badge, isVariable, pricing, variants, stock } = req.body;
-      console.log("categories before parse:", categories);
-      console.log("pricing before parse:", pricing);
-      console.log("variants before parse:", variants);
+      let { name, description, categories, badge, isVariable, pricing, variants, stock, thumbnail } = req.body;
+
       if (!name) {
          return res.status(400).json({
             success: false,
@@ -119,6 +117,7 @@ export const createProduct = async (req, res) => {
       }
 
       const images = await uploadMany(req.files?.productImages, "products");
+      const thumbnails = await uploadMany(req.files?.thumbnails || req.files?.thumbnail, "products/thumbnails");
 
       const slug = slugify(name, { lower: true, strict: true });
 
@@ -140,6 +139,7 @@ export const createProduct = async (req, res) => {
          variants: processedVariants,
          stock,
          images,
+         thumbnail: thumbnails,
       });
 
       res.status(201).json({
@@ -160,19 +160,61 @@ export const getProducts = async (req, res) => {
 
       const query = {};
 
-      if (search) {
-         query.name = { $regex: search, $options: "i" };
+      if (typeof search === "string") {
+         query.name = {
+            $regex: search,
+            $options: "i",
+         };
+      } else if (search && typeof search === "object") {
+         const fieldMap = {
+            material: "variants.material",
+            color: "variants.colors.hex.code",
+            colorName: "variants.colors.hex.colorName",
+         };
+
+         Object.entries(search).forEach(([key, value]) => {
+            if (!value) return;
+
+            const field = fieldMap[key] || key;
+
+            switch (key) {
+               case "color":
+                  // Exact match for hex code
+                  query[field] = String(value);
+                  break;
+
+               default:
+                  query[field] = {
+                     $regex: String(value),
+                     $options: "i",
+                  };
+            }
+         });
       }
 
       if (category) {
-         query.categories = category;
+         const categoryDoc = await CategoryModel.findOne({ slug: category });
+
+         if (!categoryDoc) {
+            return res.json({
+               success: true,
+               pagination: {
+                  total: 0,
+                  page: Number(page),
+                  pages: 0,
+               },
+               products: [],
+            });
+         }
+
+         query.categories = categoryDoc._id;
       }
 
       const limitNum = Number(limit);
       const pageNum = Number(page);
       const skip = (pageNum - 1) * limitNum;
 
-      const products = await ProductModel.find(query).populate("categories").populate("variants.price.region").skip(skip).limit(limitNum).sort({ createdAt: -1 });
+      const products = await ProductModel.find(query).populate("categories").populate("variants.price.region").populate("pricing.region").skip(skip).limit(limitNum).sort({ createdAt: -1 });
 
       const total = await ProductModel.countDocuments(query);
 
@@ -190,9 +232,69 @@ export const getProducts = async (req, res) => {
    }
 };
 
+export const getProductsFilter = async (req, res) => {
+   try {
+      const { category } = req.query;
+
+      const query = {};
+
+      if (category) {
+         const categoryDoc = await CategoryModel.findOne({
+            slug: category,
+         }).select("_id");
+
+         if (!categoryDoc) {
+            return res.json({
+               success: true,
+               filters: {
+                  badges: [],
+                  materials: [],
+                  colors: [],
+               },
+            });
+         }
+
+         query.categories = categoryDoc._id;
+      }
+
+      const products = await ProductModel.find(query).select("badge variants.material variants.colors.hex.code");
+
+      const badges = new Set();
+      const materials = new Set();
+      const colors = new Set();
+
+      products.forEach((product) => {
+         if (product.badge) badges.add(product.badge);
+
+         product.variants?.forEach((variant) => {
+            if (variant.material) materials.add(variant.material);
+            variant.colors?.forEach((color) => {
+               if (color.hex?.code) {
+                  colors.add(color.hex.code);
+               }
+            });
+         });
+      });
+
+      res.json({
+         success: true,
+         filters: {
+            badges: [...badges],
+            materials: [...materials],
+            colors: [...colors],
+         },
+      });
+   } catch (error) {
+      res.status(500).json({
+         success: false,
+         error: error.message,
+      });
+   }
+};
+
 export const getSingleProduct = async (req, res) => {
    try {
-      const product = await ProductModel.findById(req.params.id).populate("categories").populate("variants.price.region");
+      const product = await ProductModel.findOne({ slug: req.params.id }).populate("categories").populate("variants.price.region");
 
       if (!product) {
          return res.status(404).json({
@@ -214,6 +316,7 @@ export const updateProduct = async (req, res) => {
    try {
       const updateData = { ...req.body };
       delete updateData.images;
+      delete updateData.thumbnail;
 
       const product = await ProductModel.findById(req.params.id);
 
@@ -361,6 +464,14 @@ export const updateProduct = async (req, res) => {
          if (newProductImages.length > 0) {
             await destroyCloudinaryUrls(product.images || []);
             updateData.images = newProductImages;
+         }
+      }
+
+      if (req.files?.thumbnails || req.files?.thumbnail) {
+         const newThumbnails = await uploadMany(req.files.thumbnails || req.files.thumbnail, "products/thumbnails");
+         if (newThumbnails.length > 0) {
+            await destroyCloudinaryUrls(product.thumbnail || []);
+            updateData.thumbnail = newThumbnails;
          }
       }
 
