@@ -7,6 +7,7 @@ const logDirectory = path.resolve('/tmp/logs');
 let errorLogStream;
 
 try {
+<<<<<<< HEAD
   // Ensure logs directory exists
   if (!fs.existsSync(logDirectory)) {
     fs.mkdirSync(logDirectory, { recursive: true });
@@ -22,11 +23,32 @@ try {
   errorLogStream = {
     write: () => {},
   };
+=======
+   // Ensure logs directory exists
+   if (!fs.existsSync(logDirectory)) {
+      fs.mkdirSync(logDirectory, { recursive: true });
+   }
+
+   // Create write stream
+   errorLogStream = fs.createWriteStream(path.join(logDirectory, "errors.log"), { flags: "a" });
+   console.log("✅ ErrorLogger initialized successfully");
+} catch (err) {
+   console.error("⚠️ ErrorLogger initialization failed:", err);
+
+   // Fallback dummy logger to avoid crash
+   errorLogStream = {
+      write: () => {},
+   };
+>>>>>>> 19b99d024b101a4dc2dfdef3c2b896806b9ff0dc
 }
 
 // Middleware function
 const errorLogger = (err, req, res, next) => {
+<<<<<<< HEAD
   const log = `
+=======
+   const log = `
+>>>>>>> 19b99d024b101a4dc2dfdef3c2b896806b9ff0dc
 [${new Date().toISOString()}]
 ${req.method} ${req.originalUrl}
 Status: ${err.status || 500}
@@ -35,6 +57,7 @@ Stack: ${err.stack}
 
 `;
 
+<<<<<<< HEAD
   try {
     errorLogStream.write(log);
   } catch (writeErr) {
@@ -43,6 +66,16 @@ Stack: ${err.stack}
 
   // Forward to next error handler
   next(err);
+=======
+   try {
+      errorLogStream.write(log);
+   } catch (writeErr) {
+      console.error("⚠️ Failed to write error log:", writeErr);
+   }
+
+   // Forward to next error handler
+   next(err);
+>>>>>>> 19b99d024b101a4dc2dfdef3c2b896806b9ff0dc
 };
 
 export default errorLogger;

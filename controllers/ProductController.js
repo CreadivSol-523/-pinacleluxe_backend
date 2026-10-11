@@ -1,155 +1,81 @@
-import mongoose from "mongoose";
-import slugify from "slugify";
 import ProductModel from "../models/ProductSchema.js";
 import CategoryModel from "../models/CategorySchema.js";
-import RegionModel from "../models/RegionSchema.js";
-import {
-    uploadMany,
-    destroyCloudinaryUrls,
-    collectProductImageUrls,
-    collectVariantImageUrls,
-    buildProcessedVariants,
-    buildProcessedVariantsForUpdate,
-} from "../utils/ProductUploadHelpers.js";
+import slugify from "slugify";
+import { v2 as cloudinary } from "cloudinary";
 
-export const createProduct = async (req, res) => {
+// Get all products with search, filtering, pagination
+export const getProducts = async (req, res, next) => {
     try {
-        let {
-            name,
-            description,
-            categories,
-            badge,
-            isVariable,
-            pricing,
-            variants,
-            stock,
-            thumbnail,
-        } = req.body;
+        const { page = 1, limit = 10, search = "", category, isActive } = req.query;
+        const query = {};
 
-        if (!name) {
-            return res.status(400).json({
-                success: false,
-                message: "Name is required",
-            });
+        if (search) {
+            query.name = { $regex: search, $options: "i" };
+        }
+        if (category) {
+            query.category = category;
+        }
+        if (isActive !== undefined) {
+            query.isActive = isActive === "true";
         }
 
-        if (typeof categories === "string") {
-            categories = JSON.parse(categories);
-        }
+        const skip = (Number(page) - 1) * Number(limit);
+        const products = await ProductModel.find(query)
+            .populate("category", "name slug")
+            .skip(skip)
+            .limit(Number(limit))
+            .sort({ createdAt: -1 });
 
-        if (!Array.isArray(categories) || categories.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: "categories must be a non-empty array",
-            });
-        }
+        const total = await ProductModel.countDocuments(query);
 
-        const existingCategories = await CategoryModel.find({
-            _id: { $in: categories },
+        res.status(200).json({
+            success: true,
+            total,
+            page: Number(page),
+            pages: Math.ceil(total / Number(limit)),
+            products,
         });
+    } catch (error) {
+        next(error);
+    }
+};
 
-        if (existingCategories.length !== categories.length) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid categories",
-            });
+// Get single product
+export const getSingleProduct = async (req, res, next) => {
+    try {
+        const product = await ProductModel.findById(req.params.id).populate("category", "name slug");
+        if (!product) {
+            return res.status(404).json({ success: false, message: "Product not found" });
+        }
+        res.status(200).json({ success: true, product });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Create product with stock management
+export const createProduct = async (req, res, next) => {
+    try {
+        let { name, description, price, comparePrice, stock, sku, lowStockThreshold, category, isActive } = req.body;
+
+        if (!name || price === undefined || stock === undefined || !category) {
+            return res.status(400).json({ success: false, message: "Please provide name, price, stock, and category" });
         }
 
-        if (typeof pricing === "string") {
-            pricing = JSON.parse(pricing);
-        }
-
-        if (pricing != null && !Array.isArray(pricing)) {
-            return res.status(400).json({
-                success: false,
-                message: "pricing must be an array",
-            });
-        }
-
-        if (isVariable === false && (!pricing || pricing.length === 0)) {
-            return res.status(400).json({
-                success: false,
-                message: "Non-variable products must include pricing",
-            });
-        }
-
-        // Validate and resolve top-level pricing region references to ObjectIds
-        if (Array.isArray(pricing) && pricing.length > 0) {
-            const processedPricing = [];
-            for (const entry of pricing) {
-                const { region: regionRef, price: regionPrice, discountMode, discountValue } = entry || {};
-
-                if (!regionRef || regionPrice == null) {
-                    return res.status(400).json({
-                        success: false,
-                        message: "Each pricing entry must include region and price",
-                    });
-                }
-
-                let region;
-                if (mongoose.Types.ObjectId.isValid(regionRef)) {
-                    region = await RegionModel.findById(regionRef);
-                } else if (typeof regionRef === "string") {
-                    region = await RegionModel.findOne({ code: regionRef.toUpperCase().trim() });
-                }
-
-                if (!region) {
-                    return res.status(400).json({
-                        success: false,
-                        message: `Region not found: ${regionRef}`,
-                    });
-                }
-
-                processedPricing.push({
-                    region: region._id,
-                    price: Number(regionPrice),
-                    discountMode,
-                    discountValue: discountValue || 0,
+        let images = [];
+        if (req.files && req.files.images) {
+            const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
+            for (const file of files) {
+                const upload = await cloudinary.uploader.upload(file.tempFilePath, {
+                    folder: "products",
                 });
+                images.push(upload.secure_url);
             }
-
-            pricing = processedPricing;
         }
-
-        if (typeof variants === "string") {
-            variants = JSON.parse(variants);
-        }
-
-        if (!Array.isArray(variants)) {
-            return res.status(400).json({
-                success: false,
-                message: "variants must be an array",
-            });
-        }
-
-        let processedVariants;
-        try {
-            processedVariants = await buildProcessedVariants(
-                variants,
-                req.files
-            );
-        } catch (e) {
-            const status = e.status || 500;
-            return res.status(status).json({
-                success: false,
-                message: e.message,
-            });
-        }
-
-        const images = await uploadMany(
-            req.files?.productImages,
-            "products"
-        );
-        const thumbnails = await uploadMany(
-            req.files?.thumbnails || req.files?.thumbnail,
-            "products/thumbnails"
-        );
 
         const slug = slugify(name, { lower: true, strict: true });
-
         let uniqueSlug = slug;
         let count = 1;
-
         while (await ProductModel.findOne({ slug: uniqueSlug })) {
             uniqueSlug = `${slug}-${count++}`;
         }
@@ -158,314 +84,104 @@ export const createProduct = async (req, res) => {
             name,
             slug: uniqueSlug,
             description,
-            categories,
-            badge,
-            isVariable,
-            pricing,
-            variants: processedVariants,
-            stock,
-            images,
-            thumbnail: thumbnails,
-        });
-
-        res.status(201).json({
-            success: true,
-            product,
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message,
-        });
-    }
-};
-
-export const getProducts = async (req, res) => {
-    try {
-        const {
-            page = 1,
-            limit = 10,
-            search = "",
+            price: Number(price),
+            comparePrice: comparePrice ? Number(comparePrice) : undefined,
+            stock: Number(stock),
+            sku: sku || undefined,
+            lowStockThreshold: lowStockThreshold ? Number(lowStockThreshold) : 5,
             category,
-        } = req.query;
-
-        const query = {};
-
-        if (search) {
-            query.name = { $regex: search, $options: "i" };
-        }
-
-        if (category) {
-            query.categories = category;
-        }
-
-        const limitNum = Number(limit);
-        const pageNum = Number(page);
-        const skip = (pageNum - 1) * limitNum;
-
-        const products = await ProductModel.find(query)
-            .populate("categories")
-            .populate("variants.price.region")
-            .skip(skip)
-            .limit(limitNum)
-            .sort({ createdAt: -1 });
-
-        const total = await ProductModel.countDocuments(query);
-
-        res.json({
-            success: true,
-            pagination: {
-                total,
-                page: pageNum,
-                pages: Math.ceil(total / limitNum) || 0,
-            },
-            products,
+            images,
+            isActive: isActive !== undefined ? isActive : true,
         });
+
+        res.status(201).json({ success: true, product });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        next(error);
     }
 };
 
-export const getSingleProduct = async (req, res) => {
+// Update product
+export const updateProduct = async (req, res, next) => {
     try {
-        const product = await ProductModel.findById(req.params.id)
-            .populate("categories")
-            .populate("variants.price.region");
-
-        if (!product) {
-            return res.status(404).json({
-                success: false,
-                message: "Product not found",
-            });
-        }
-
-        res.json({
-            success: true,
-            product,
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-};
-
-export const updateProduct = async (req, res) => {
-    try {
-        const updateData = { ...req.body };
-        delete updateData.images;
-        delete updateData.thumbnail;
-
-        const product = await ProductModel.findById(req.params.id);
-
-        if (!product) {
-            return res.status(404).json({
-                success: false,
-                message: "Product not found",
-            });
-        }
+        const { id } = req.params;
+        let updateData = { ...req.body };
 
         if (updateData.name) {
-            const slug = slugify(updateData.name, {
-                lower: true,
-                strict: true,
-            });
-
-            let uniqueSlug = slug;
-            let count = 1;
-
-            while (
-                await ProductModel.findOne({
-                    slug: uniqueSlug,
-                    _id: { $ne: product._id },
-                })
-            ) {
-                uniqueSlug = `${slug}-${count++}`;
-            }
-
-            updateData.slug = uniqueSlug;
+            updateData.slug = slugify(updateData.name, { lower: true, strict: true });
         }
 
-        if (typeof updateData.categories === "string") {
-            updateData.categories = JSON.parse(updateData.categories);
-        }
-
-        if (updateData.categories) {
-            if (!Array.isArray(updateData.categories)) {
-                return res.status(400).json({
-                    success: false,
-                    message: "categories must be an array",
+        if (req.files && req.files.images) {
+            let images = [];
+            const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
+            for (const file of files) {
+                const upload = await cloudinary.uploader.upload(file.tempFilePath, {
+                    folder: "products",
                 });
+                images.push(upload.secure_url);
             }
-
-            const invalidIds = updateData.categories.filter(
-                (id) => !mongoose.Types.ObjectId.isValid(id)
-            );
-
-            if (invalidIds.length) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Invalid category IDs",
-                    invalidIds,
-                });
-            }
-
-            const existing = await CategoryModel.find({
-                _id: { $in: updateData.categories },
-            });
-
-            if (existing.length !== updateData.categories.length) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Some categories do not exist",
-                });
-            }
+            updateData.images = images;
         }
 
-        if (typeof updateData.variants === "string") {
-            updateData.variants = JSON.parse(updateData.variants);
+        const product = await ProductModel.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
+        if (!product) {
+            return res.status(404).json({ success: false, message: "Product not found" });
         }
 
-        if (typeof updateData.pricing === "string") {
-            updateData.pricing = JSON.parse(updateData.pricing);
-        }
-
-        if (updateData.pricing != null && !Array.isArray(updateData.pricing)) {
-            return res.status(400).json({
-                success: false,
-                message: "pricing must be an array",
-            });
-        }
-
-        // If pricing provided in update, resolve region refs
-        if (Array.isArray(updateData.pricing) && updateData.pricing.length > 0) {
-            const processedPricing = [];
-            for (const entry of updateData.pricing) {
-                const { region: regionRef, price: regionPrice, discountMode, discountValue } = entry || {};
-
-                if (!regionRef || regionPrice == null) {
-                    return res.status(400).json({
-                        success: false,
-                        message: "Each pricing entry must include region and price",
-                    });
-                }
-
-                let region;
-                if (mongoose.Types.ObjectId.isValid(regionRef)) {
-                    region = await RegionModel.findById(regionRef);
-                } else if (typeof regionRef === "string") {
-                    region = await RegionModel.findOne({ code: regionRef.toUpperCase().trim() });
-                }
-
-                if (!region) {
-                    return res.status(400).json({
-                        success: false,
-                        message: `Region not found: ${regionRef}`,
-                    });
-                }
-
-                processedPricing.push({
-                    region: region._id,
-                    price: Number(regionPrice),
-                    discountMode,
-                    discountValue: discountValue || 0,
-                });
-            }
-
-            updateData.pricing = processedPricing;
-        }
-
-        if (updateData.variants) {
-            if (!Array.isArray(updateData.variants)) {
-                return res.status(400).json({
-                    success: false,
-                    message: "variants must be an array",
-                });
-            }
-
-            const oldVariantUrls = collectVariantImageUrls(product.variants);
-
-            try {
-                updateData.variants = await buildProcessedVariantsForUpdate(
-                    updateData.variants,
-                    req.files,
-                    product.variants
-                );
-            } catch (e) {
-                const status = e.status || 400;
-                return res.status(status).json({
-                    success: false,
-                    message: e.message,
-                });
-            }
-
-            const newVariantUrlSet = new Set(
-                collectVariantImageUrls(updateData.variants)
-            );
-            await destroyCloudinaryUrls(
-                oldVariantUrls.filter((u) => !newVariantUrlSet.has(u))
-            );
-        }
-
-        if (req.files?.productImages) {
-            const newProductImages = await uploadMany(
-                req.files.productImages,
-                "products"
-            );
-            if (newProductImages.length > 0) {
-                await destroyCloudinaryUrls(product.images || []);
-                updateData.images = newProductImages;
-            }
-        }
-
-        if (req.files?.thumbnails || req.files?.thumbnail) {
-            const newThumbnails = await uploadMany(
-                req.files.thumbnails || req.files.thumbnail,
-                "products/thumbnails"
-            );
-            if (newThumbnails.length > 0) {
-                await destroyCloudinaryUrls(product.thumbnail || []);
-                updateData.thumbnail = newThumbnails;
-            }
-        }
-
-        const updated = await ProductModel.findByIdAndUpdate(
-            req.params.id,
-            { $set: updateData },
-            { new: true }
-        );
-
-        res.json({
-            success: true,
-            product: updated,
-        });
+        res.status(200).json({ success: true, product });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message,
-        });
+        next(error);
     }
 };
 
-export const deleteProduct = async (req, res) => {
+// Delete product
+export const deleteProduct = async (req, res, next) => {
     try {
-        const product = await ProductModel.findById(req.params.id);
-
+        const product = await ProductModel.findByIdAndDelete(req.params.id);
         if (!product) {
-            return res.status(404).json({
-                success: false,
-                message: "Product not found",
-            });
+            return res.status(404).json({ success: false, message: "Product not found" });
+        }
+        res.status(200).json({ success: true, message: "Product deleted successfully" });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Inventory Adjustment API (Restock / Manual Adjustment with audit logging capability)
+export const adjustStock = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { adjustment, type } = req.body; // type: 'add' or 'set', adjustment: number
+
+        if (adjustment === undefined) {
+            return res.status(400).json({ success: false, message: "Adjustment value is required" });
         }
 
-        const urls = collectProductImageUrls(product);
-        await destroyCloudinaryUrls(urls);
+        const product = await ProductModel.findById(id);
+        if (!product) {
+            return res.status(404).json({ success: false, message: "Product not found" });
+        }
 
-        await ProductModel.findByIdAndDelete(req.params.id);
+        if (type === "set") {
+            product.stock = Number(adjustment);
+        } else {
+            // default add (or subtract if negative)
+            product.stock = Math.max(0, product.stock + Number(adjustment));
+        }
 
-        res.json({
+        await product.save();
+
+        res.status(200).json({
             success: true,
-            message: "Product deleted successfully",
+            message: "Stock updated successfully",
+            product: {
+                id: product._id,
+                name: product.name,
+                stock: product.stock,
+                lowStockThreshold: product.lowStockThreshold,
+                isLowStock: product.stock <= product.lowStockThreshold,
+            },
         });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        next(error);
     }
 };
