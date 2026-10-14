@@ -1,6 +1,7 @@
 import express from "express";
 import {
     getProducts,
+    getProductDropdownList,
     getSingleProduct,
     createProduct,
     updateProduct,
@@ -11,6 +12,7 @@ import {
 const router = express.Router();
 
 router.get("/", getProducts);
+router.get("/dropdown-list", getProductDropdownList); // Lightweight endpoint for dropdown selection of accessories
 router.get("/:id", getSingleProduct);
 router.post("/", createProduct);
 router.put("/:id", updateProduct);

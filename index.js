@@ -18,6 +18,7 @@ import ProductRoutes from "./routes/ProductRoutes.js";
 import OrderRoutes from "./routes/OrderRoutes.js";
 import RegionRoutes from "./routes/RegionRoutes.js";
 import WebsiteSectionRouter from "./routes/WebsiteSectionRouter.js";
+import PaymentRoutes from "./routes/PaymentRoutes.js";
 import swaggerUi from "swagger-ui-express";
 import swaggerSpec from "./swagger.js";
 import { allowedOrigins } from "./utils/AllowedOrigins.js";
@@ -80,6 +81,7 @@ app.use("/api/product", ProductRoutes);
 app.use("/api/order", OrderRoutes);
 app.use("/api/region", RegionRoutes);
 app.use("/api/webSection", WebsiteSectionRouter);
+app.use("/api/payment", PaymentRoutes);
 
 // === Error Handler
 app.use(ErrorHandler);

@@ -22,6 +22,7 @@ export const getProducts = async (req, res, next) => {
         const skip = (Number(page) - 1) * Number(limit);
         const products = await ProductModel.find(query)
             .populate("category", "name slug")
+            .populate("accessories")
             .skip(skip)
             .limit(Number(limit))
             .sort({ createdAt: -1 });
@@ -40,10 +41,44 @@ export const getProducts = async (req, res, next) => {
     }
 };
 
+// Get product list for dropdown (lightweight with search & pagination)
+export const getProductDropdownList = async (req, res, next) => {
+    try {
+        const { page = 1, limit = 20, search = "" } = req.query;
+        const query = { isActive: true };
+
+        if (search) {
+            query.name = { $regex: search, $options: "i" };
+        }
+
+        const skip = (Number(page) - 1) * Number(limit);
+        const products = await ProductModel.find(query)
+            .select("name price images sku stock")
+            .skip(skip)
+            .limit(Number(limit))
+            .sort({ name: 1 });
+
+        const total = await ProductModel.countDocuments(query);
+
+        res.status(200).json({
+            success: true,
+            total,
+            page: Number(page),
+            pages: Math.ceil(total / Number(limit)),
+            products,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 // Get single product
 export const getSingleProduct = async (req, res, next) => {
     try {
-        const product = await ProductModel.findById(req.params.id).populate("category", "name slug");
+        const product = await ProductModel.findById(req.params.id)
+            .populate("category", "name slug")
+            .populate("accessories");
+
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found" });
         }
@@ -53,10 +88,10 @@ export const getSingleProduct = async (req, res, next) => {
     }
 };
 
-// Create product with stock management
+// Create product with stock management and accessories
 export const createProduct = async (req, res, next) => {
     try {
-        let { name, description, price, comparePrice, stock, sku, lowStockThreshold, category, isActive } = req.body;
+        let { name, description, price, comparePrice, stock, sku, lowStockThreshold, category, isActive, accessories } = req.body;
 
         if (!name || price === undefined || stock === undefined || !category) {
             return res.status(400).json({ success: false, message: "Please provide name, price, stock, and category" });
@@ -80,6 +115,16 @@ export const createProduct = async (req, res, next) => {
             uniqueSlug = `${slug}-${count++}`;
         }
 
+        // Parse accessories if passed as JSON string or array
+        let parsedAccessories = [];
+        if (accessories) {
+            try {
+                parsedAccessories = typeof accessories === 'string' ? JSON.parse(accessories) : accessories;
+            } catch (e) {
+                parsedAccessories = Array.isArray(accessories) ? accessories : [accessories];
+            }
+        }
+
         const product = await ProductModel.create({
             name,
             slug: uniqueSlug,
@@ -92,9 +137,14 @@ export const createProduct = async (req, res, next) => {
             category,
             images,
             isActive: isActive !== undefined ? isActive : true,
+            accessories: parsedAccessories,
         });
 
-        res.status(201).json({ success: true, product });
+        const populatedProduct = await ProductModel.findById(product._id)
+            .populate("category", "name slug")
+            .populate("accessories");
+
+        res.status(201).json({ success: true, product: populatedProduct });
     } catch (error) {
         next(error);
     }
@@ -110,6 +160,16 @@ export const updateProduct = async (req, res, next) => {
             updateData.slug = slugify(updateData.name, { lower: true, strict: true });
         }
 
+        if (updateData.accessories) {
+            try {
+                updateData.accessories = typeof updateData.accessories === 'string'
+                    ? JSON.parse(updateData.accessories)
+                    : updateData.accessories;
+            } catch (e) {
+                // keep as is if parsing fails
+            }
+        }
+
         if (req.files && req.files.images) {
             let images = [];
             const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
@@ -122,7 +182,10 @@ export const updateProduct = async (req, res, next) => {
             updateData.images = images;
         }
 
-        const product = await ProductModel.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
+        const product = await ProductModel.findByIdAndUpdate(id, updateData, { new: true, runValidators: true })
+            .populate("category", "name slug")
+            .populate("accessories");
+
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found" });
         }
@@ -164,7 +227,6 @@ export const adjustStock = async (req, res, next) => {
         if (type === "set") {
             product.stock = Number(adjustment);
         } else {
-            // default add (or subtract if negative)
             product.stock = Math.max(0, product.stock + Number(adjustment));
         }
 
@@ -172,14 +234,8 @@ export const adjustStock = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: "Stock updated successfully",
-            product: {
-                id: product._id,
-                name: product.name,
-                stock: product.stock,
-                lowStockThreshold: product.lowStockThreshold,
-                isLowStock: product.stock <= product.lowStockThreshold,
-            },
+            message: "Stock adjusted successfully",
+            product,
         });
     } catch (error) {
         next(error);

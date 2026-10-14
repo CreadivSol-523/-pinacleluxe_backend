@@ -14,6 +14,8 @@ const ProductSchema = new mongoose.Schema(
         category: { type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true },
         images: [{ type: String }],
         isActive: { type: Boolean, default: true, index: true },
+        // Sub-products / Accessories relation (linking existing products as accessories/add-ons)
+        accessories: [{ type: mongoose.Schema.Types.ObjectId, ref: "Product" }],
     },
     { timestamps: true }
 );
