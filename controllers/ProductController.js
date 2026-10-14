@@ -3,7 +3,7 @@ import CategoryModel from "../models/CategorySchema.js";
 import slugify from "slugify";
 import { v2 as cloudinary } from "cloudinary";
 
-// Get all products with search, filtering, pagination
+// Get all products with search, filtering, pagination, and region population
 export const getProducts = async (req, res, next) => {
     try {
         const { page = 1, limit = 10, search = "", category, isActive } = req.query;
@@ -23,6 +23,7 @@ export const getProducts = async (req, res, next) => {
         const products = await ProductModel.find(query)
             .populate("category", "name slug")
             .populate("accessories")
+            .populate("pricing.region", "name code currency")
             .skip(skip)
             .limit(Number(limit))
             .sort({ createdAt: -1 });
@@ -53,7 +54,8 @@ export const getProductDropdownList = async (req, res, next) => {
 
         const skip = (Number(page) - 1) * Number(limit);
         const products = await ProductModel.find(query)
-            .select("name price images sku stock")
+            .select("name price pricing images sku stock")
+            .populate("pricing.region", "name code currency")
             .skip(skip)
             .limit(Number(limit))
             .sort({ name: 1 });
@@ -72,12 +74,13 @@ export const getProductDropdownList = async (req, res, next) => {
     }
 };
 
-// Get single product
+// Get single product with region pricing and accessories populated
 export const getSingleProduct = async (req, res, next) => {
     try {
         const product = await ProductModel.findById(req.params.id)
             .populate("category", "name slug")
-            .populate("accessories");
+            .populate("accessories")
+            .populate("pricing.region", "name code currency");
 
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found" });
@@ -88,10 +91,10 @@ export const getSingleProduct = async (req, res, next) => {
     }
 };
 
-// Create product with stock management and accessories
+// Create product with stock management, accessories, and regional pricing
 export const createProduct = async (req, res, next) => {
     try {
-        let { name, description, price, comparePrice, stock, sku, lowStockThreshold, category, isActive, accessories } = req.body;
+        let { name, description, price, comparePrice, stock, sku, lowStockThreshold, category, isActive, accessories, pricing } = req.body;
 
         if (!name || price === undefined || stock === undefined || !category) {
             return res.status(400).json({ success: false, message: "Please provide name, price, stock, and category" });
@@ -125,6 +128,16 @@ export const createProduct = async (req, res, next) => {
             }
         }
 
+        // Parse pricing if passed as JSON string or array
+        let parsedPricing = [];
+        if (pricing) {
+            try {
+                parsedPricing = typeof pricing === 'string' ? JSON.parse(pricing) : pricing;
+            } catch (e) {
+                parsedPricing = Array.isArray(pricing) ? pricing : [pricing];
+            }
+        }
+
         const product = await ProductModel.create({
             name,
             slug: uniqueSlug,
@@ -138,11 +151,13 @@ export const createProduct = async (req, res, next) => {
             images,
             isActive: isActive !== undefined ? isActive : true,
             accessories: parsedAccessories,
+            pricing: parsedPricing,
         });
 
         const populatedProduct = await ProductModel.findById(product._id)
             .populate("category", "name slug")
-            .populate("accessories");
+            .populate("accessories")
+            .populate("pricing.region", "name code currency");
 
         res.status(201).json({ success: true, product: populatedProduct });
     } catch (error) {
@@ -150,7 +165,7 @@ export const createProduct = async (req, res, next) => {
     }
 };
 
-// Update product
+// Update product with regional pricing support
 export const updateProduct = async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -165,9 +180,15 @@ export const updateProduct = async (req, res, next) => {
                 updateData.accessories = typeof updateData.accessories === 'string'
                     ? JSON.parse(updateData.accessories)
                     : updateData.accessories;
-            } catch (e) {
-                // keep as is if parsing fails
-            }
+            } catch (e) {}
+        }
+
+        if (updateData.pricing) {
+            try {
+                updateData.pricing = typeof updateData.pricing === 'string'
+                    ? JSON.parse(updateData.pricing)
+                    : updateData.pricing;
+            } catch (e) {}
         }
 
         if (req.files && req.files.images) {
@@ -184,7 +205,8 @@ export const updateProduct = async (req, res, next) => {
 
         const product = await ProductModel.findByIdAndUpdate(id, updateData, { new: true, runValidators: true })
             .populate("category", "name slug")
-            .populate("accessories");
+            .populate("accessories")
+            .populate("pricing.region", "name code currency");
 
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found" });
