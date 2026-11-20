@@ -19,7 +19,6 @@
     "express": "^4.18.2",
     "express-fileupload": "^1.5.2",
     "express-rate-limit": "^7.5.0",
-    "swagger-ui-express": "^4.0.0",
     "helmet": "^8.1.0",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
@@ -27,7 +26,9 @@
     "multer": "^2.0.1",
     "nodemailer": "^7.0.3",
     "redis": "^5.1.1",
-    "slugify": "^1.6.9"
+    "slugify": "^1.6.9",
+    "stripe": "^23.2.0",
+    "swagger-ui-express": "^4.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

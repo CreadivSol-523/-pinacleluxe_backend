@@ -3,147 +3,157 @@ import crypto from 'crypto';
 
 class PayFastService {
     constructor() {
-        // Note: Update baseURL when production/sandbox URL is provided by PremierPayFast
-        this.baseURL = process.env.PAYFAST_BASE_URL || 'https://api.premierpayfast.com/v1';
-        this.merchantId = process.env.MERCHANT_ID || '';
-        this.securedKey = process.env.SECURED_KEY || '';
-        this.cachedToken = null;
-        this.tokenExpiry = 0;
+        this.merchantId = process.env.PAYFAST_MERCHANT_ID || '102';
+        this.securedKey = process.env.PAYFAST_SECURED_KEY || 'zWHjBp2AlttNu1sK';
+        this.isSandbox = (process.env.PAYFAST_SANDBOX || 'true').toLowerCase() === 'true';
     }
 
     /**
-     * Generate HMAC-SHA256 secured hash
+     * Get the base URL depending on sandbox/live mode
      */
-    generateHash(dataString) {
-        return crypto
-            .createHmac('sha256', this.securedKey)
-            .update(dataString)
-            .digest('hex');
+    get baseURL() {
+        return this.isSandbox
+            ? 'https://ipguat.apps.net.pk/Ecommerce/api/Transaction'
+            : 'https://ipg1.apps.net.pk/Ecommerce/api/Transaction';
     }
 
     /**
-     * Get or refresh access token from PayFast
+     * Get the form post URL for the frontend redirect
      */
-    async getToken(customerIp = '127.0.0.1') {
-        if (this.cachedToken && Date.now() < this.tokenExpiry) {
-            return this.cachedToken;
-        }
+    get formPostURL() {
+        return `${this.baseURL}/PostTransaction`;
+    }
+
+    /**
+     * Step 1: Get Access Token from PayFast
+     * Called server-side before the user is redirected.
+     *
+     * @param {string} basketId   – unique order/basket identifier
+     * @param {number|string} txnAmount – transaction amount
+     * @param {string} currencyCode – e.g. "PKR"
+     * @returns {Promise<string>} ACCESS_TOKEN
+     */
+    async getAccessToken(basketId, txnAmount, currencyCode = 'PKR') {
+        const tokenURL = `${this.baseURL}/GetAccessToken`;
+
+        const params = new URLSearchParams();
+        params.append('MERCHANT_ID', this.merchantId);
+        params.append('SECURED_KEY', this.securedKey);
+        params.append('BASKET_ID', basketId);
+        params.append('TXNAMT', String(txnAmount));
+        params.append('CURRENCY_CODE', currencyCode);
 
         try {
-            const params = new URLSearchParams();
-            params.append('merchant_id', this.merchantId);
-            params.append('secured_key', this.securedKey);
-            params.append('grant_type', 'client_credentials');
-            params.append('customer_ip', customerIp);
-            params.append('api_version', 'v2.3');
-
-            const response = await axios.post(`${this.baseURL}/token`, params, {
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            const response = await axios.post(tokenURL, params, {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             });
 
-            if (response.data && response.data.token) {
-                this.cachedToken = response.data.token;
-                const expirySec = Number(response.data.expiry) || 3600;
-                this.tokenExpiry = Date.now() + (expirySec - 300) * 1000;
-                return this.cachedToken;
-            } else {
-                throw new Error('Failed to obtain PayFast access token');
+            const token = response.data?.ACCESS_TOKEN || response.data?.access_token;
+            if (!token) {
+                console.error('PayFast token response:', response.data);
+                throw new Error('ACCESS_TOKEN not found in PayFast response');
             }
+            return token;
         } catch (error) {
-            throw new Error(`PayFast Authentication Error: ${error.response?.data?.message || error.message}`);
+            const msg = error.response?.data?.message || error.response?.data || error.message;
+            throw new Error(`PayFast Token Error: ${msg}`);
         }
     }
 
     /**
-     * Step 1: Get Transaction Token for One-Time Checkout
+     * Build the full set of form fields that the frontend must POST to PayFast.
+     *
+     * @param {object} opts
+     * @param {string} opts.token           – ACCESS_TOKEN from getAccessToken
+     * @param {string} opts.basketId
+     * @param {number} opts.txnAmount
+     * @param {string} opts.currencyCode
+     * @param {string} opts.orderDate       – "YYYY-MM-DD HH:mm:ss"
+     * @param {string} opts.customerEmail
+     * @param {string} opts.customerMobile
+     * @param {string} opts.txnDesc
+     * @param {string} opts.successUrl
+     * @param {string} opts.failureUrl
+     * @param {string} opts.checkoutUrl     – URL to return to when user cancels
+     * @param {Array}  opts.items           – [{sku,name,price,qty}, ...]
+     * @param {string} [opts.merchantName]  – display name
+     * @returns {object} { formPostURL, formFields }
      */
-    async getTransactionToken(paymentData) {
-        const token = await this.getToken(paymentData.customerIp);
+    buildFormData(opts) {
+        const fields = {
+            CURRENCY_CODE: opts.currencyCode || 'PKR',
+            MERCHANT_ID: this.merchantId,
+            MERCHANT_NAME: opts.merchantName || 'PinacleLuxe',
+            TOKEN: opts.token,
+            BASKET_ID: opts.basketId,
+            TXNAMT: String(opts.txnAmount),
+            ORDER_DATE: opts.orderDate,
+            SUCCESS_URL: opts.successUrl,
+            FAILURE_URL: opts.failureUrl,
+            CHECKOUT_URL: opts.checkoutUrl,
+            CUSTOMER_EMAIL_ADDRESS: opts.customerEmail,
+            CUSTOMER_MOBILE_NO: opts.customerMobile,
+            SIGNATURE: `PAYFAST-${opts.basketId}`,
+            VERSION: 'MERCHANT-CART-0.1',
+            TXNDESC: opts.txnDesc || 'PinacleLuxe Purchase',
+            PROCCODE: '00',
+            TRAN_TYPE: 'ECOMM_PURCHASE',
+        };
 
-        const params = new URLSearchParams();
-        params.append('merchant_user_id', paymentData.merchantUserId);
-        params.append('user_mobile_number', paymentData.userMobileNumber);
-        params.append('account_type', paymentData.accountType);
+        // Add line items
+        if (opts.items && opts.items.length > 0) {
+            opts.items.forEach((item, idx) => {
+                fields[`ITEMS[${idx}][SKU]`] = item.sku || `SKU-${idx}`;
+                fields[`ITEMS[${idx}][NAME]`] = item.name;
+                fields[`ITEMS[${idx}][PRICE]`] = String(item.price);
+                fields[`ITEMS[${idx}][QTY]`] = String(item.qty);
+            });
+        }
 
-        if (paymentData.accountNumber) params.append(paymentData.accountType === 'CARD' ? 'card_number' : 'account_number', paymentData.accountNumber);
-        if (paymentData.expiryMonth) params.append('expiry_month', paymentData.expiryMonth);
-        if (paymentData.expiryYear) params.append('expiry_year', paymentData.expiryYear);
-        if (paymentData.cvv) params.append('cvv', paymentData.cvv);
-
-        params.append('basket_id', paymentData.basketId);
-        params.append('order_date', paymentData.orderDate);
-        params.append('txnamt', paymentData.txnAmount.toFixed(2));
-        if (paymentData.callbackUrl) params.append('callback_url', paymentData.callbackUrl);
-
-        const accountNumField = paymentData.accountNumber || '';
-        const hashString = `${paymentData.merchantUserId}+${paymentData.userMobileNumber}+${accountNumField}`;
-        params.append('secured_hash', this.generateHash(hashString));
-
-        const response = await axios.post(`${this.baseURL}/transaction/token`, params, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-        });
-
-        return response.data;
+        return {
+            formPostURL: this.formPostURL,
+            formFields: fields,
+        };
     }
 
     /**
-     * Step 2: Initiate Tokenized Payment (with OTP / 3DS)
+     * Generate the SHA-256 validation hash used to verify callback authenticity.
+     * Format: SHA256( basket_id | secured_key | merchant_id | err_code )
      */
-    async initiateTokenizedPayment(paymentData) {
-        const token = await this.getToken(paymentData.customerIp);
-
-        const params = new URLSearchParams();
-        params.append('instrument_token', paymentData.instrumentToken);
-        params.append('merchant_user_id', paymentData.merchantUserId);
-        params.append('user_mobile_number', paymentData.userMobileNumber);
-        params.append('basket_id', paymentData.basketId);
-        params.append('order_date', paymentData.orderDate);
-        params.append('txndesc', paymentData.txnDesc);
-        params.append('txnamt', paymentData.txnAmount.toFixed(2));
-        if (paymentData.otp) params.append('otp', paymentData.otp);
-        if (paymentData.transactionId) params.append('transaction_id', paymentData.transactionId);
-        if (paymentData.eci) params.append('eci', paymentData.eci);
-
-        const hashString = `${paymentData.instrumentToken}+${paymentData.merchantUserId}+${paymentData.userMobileNumber}+${paymentData.txnAmount.toFixed(2)}+${paymentData.otp || ''}`;
-        params.append('secured_hash', this.generateHash(hashString));
-
-        const response = await axios.post(`${this.baseURL}/transaction/tokenized`, params, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-        });
-
-        return response.data;
+    generateValidationHash(basketId, errCode) {
+        const raw = `${basketId}|${this.securedKey}|${this.merchantId}|${errCode}`;
+        return crypto.createHash('sha256').update(raw).digest('hex');
     }
 
     /**
-     * Check Transaction Status
+     * Validate a PayFast callback (success/failure redirect).
+     *
+     * @param {object} params – query parameters from the redirect URL
+     * @returns {{ valid: boolean, isSuccess: boolean, transactionId: string, basketId: string, errCode: string, errMsg: string }}
      */
-    async getTransactionStatus(transactionId, customerIp = '127.0.0.1') {
-        const token = await this.getToken(customerIp);
-        const response = await axios.get(`${this.baseURL}/transaction/${transactionId}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            },
-            params: { customer_ip: customerIp }
-        });
-        return response.data;
-    }
+    validateCallback(params) {
+        const {
+            err_code,
+            err_msg = '',
+            transaction_id = '',
+            basket_id = '',
+            validation_hash = '',
+        } = params;
 
-    /**
-     * List Banks
-     */
-    async listBanks(customerIp = '127.0.0.1') {
-        const token = await this.getToken(customerIp);
-        const response = await axios.get(`${this.baseURL}/list/banks`, {
-            headers: { 'Authorization': `Bearer ${token}` },
-            params: { customer_ip: customerIp }
-        });
-        return response.data;
+        const calculatedHash = this.generateValidationHash(basket_id, err_code);
+        const hashValid = calculatedHash.toLowerCase() === validation_hash.toLowerCase();
+
+        // err_code "000" or "00" means success
+        const isSuccess = hashValid && (err_code === '000' || err_code === '00');
+
+        return {
+            valid: hashValid,
+            isSuccess,
+            transactionId: transaction_id,
+            basketId: basket_id,
+            errCode: err_code,
+            errMsg: err_msg,
+        };
     }
 }
 

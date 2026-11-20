@@ -22,10 +22,16 @@ const OrderSchema = new mongoose.Schema(
             },
         ],
         itemsPrice: { type: Number, required: true },
-        taxPrice: { type: Number, required: defaultToZero => 0 },
+        taxPrice: { type: Number, default: 0 },
         shippingPrice: { type: Number, required: true, default: 0 },
         totalPrice: { type: Number, required: true },
         paymentMethod: { type: String, required: true, default: "COD" },
+        paymentGateway: {
+            type: String,
+            enum: ["PayFast", "Stripe", "COD"],
+            default: "COD",
+        },
+        gatewayTransactionId: { type: String },
         paymentStatus: {
             type: String,
             enum: ["Pending", "Paid", "Failed"],
@@ -40,7 +46,6 @@ const OrderSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-// Fix the typo in default function or object
 OrderSchema.path("taxPrice").default(0);
 
 const OrderModel = mongoose.model("Order", OrderSchema);
