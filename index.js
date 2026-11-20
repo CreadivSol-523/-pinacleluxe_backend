@@ -19,6 +19,7 @@ import OrderRoutes from "./routes/OrderRoutes.js";
 import RegionRoutes from "./routes/RegionRoutes.js";
 import WebsiteSectionRouter from "./routes/WebsiteSectionRouter.js";
 import PaymentRoutes from "./routes/PaymentRoutes.js";
+import { handleStripeWebhook } from "./controllers/PaymentController.js";
 import swaggerUi from "swagger-ui-express";
 import swaggerSpec from "./swagger.js";
 import { allowedOrigins } from "./utils/AllowedOrigins.js";
@@ -35,6 +36,13 @@ app.use(SecurityHeaders);
 
 // === MongoDB Connection ===
 connectDB();
+
+// === Stripe Webhook Route (Requires raw body) ===
+app.post(
+   "/api/payment/stripe/webhook",
+   express.raw({ type: "application/json" }),
+   handleStripeWebhook
+);
 
 // === Global Middlewares ===
 app.use(express.json());
