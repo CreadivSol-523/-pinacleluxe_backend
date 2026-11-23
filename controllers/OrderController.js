@@ -1,5 +1,7 @@
 import ProductModel from "../models/ProductSchema.js";
 import OrderModel from "../models/OrderSchema.js";
+import GeolocationService from "../services/GeolocationService.js";
+import PaymentProviderService from "../services/PaymentProviderService.js";
 import mongoose from "mongoose";
 
 // Create Order with Atomic Inventory Stock Reservation (Race Condition Prevention)
@@ -48,20 +50,43 @@ export const createOrder = async (req, res, next) => {
                 throw new Error(`Product out of stock or insufficient quantity available for item: ${item.name || item.product}`);
             }
 
-            const itemTotal = updatedProduct.price * requestedQty;
+            // Determine unit price: product.price, or regional pricing, or first variant price, or client-provided item.price
+            let unitPrice = Number(updatedProduct.price);
+            if (isNaN(unitPrice) || unitPrice === undefined || unitPrice === null) {
+                if (updatedProduct.pricing && updatedProduct.pricing.length > 0 && typeof updatedProduct.pricing[0]?.price === "number") {
+                    unitPrice = Number(updatedProduct.pricing[0].price);
+                } else if (updatedProduct.variants && updatedProduct.variants.length > 0 && updatedProduct.variants[0]?.price?.length > 0 && typeof updatedProduct.variants[0].price[0]?.price === "number") {
+                    unitPrice = Number(updatedProduct.variants[0].price[0].price);
+                } else if (typeof item.price === "number" && !isNaN(item.price)) {
+                    unitPrice = Number(item.price);
+                } else {
+                    unitPrice = 0;
+                }
+            }
+
+            const itemTotal = unitPrice * requestedQty;
             itemsPrice += itemTotal;
 
             verifiedOrderItems.push({
                 product: updatedProduct._id,
                 name: updatedProduct.name,
-                price: updatedProduct.price,
+                price: unitPrice,
                 quantity: requestedQty,
-                image: updatedProduct.images?.[0] || "",
+                image: updatedProduct.images?.[0] || item.image || "",
             });
         }
 
         const taxPrice = 0; // or calculated tax
-        const totalPrice = itemsPrice + Number(shippingPrice) + taxPrice;
+        const safeShippingPrice = Number(shippingPrice) || 0;
+        const totalPrice = itemsPrice + safeShippingPrice + taxPrice;
+
+        // Automatically detect customer location & assign payment gateway
+        const detection = await GeolocationService.detectCountry(req);
+        const detectedCountry = detection.countryCode !== "UNKNOWN"
+            ? detection.countryCode
+            : (customerDetails.country || "PK");
+
+        const selectedGateway = paymentMethod === "COD" ? "COD" : PaymentProviderService.resolveProvider(detectedCountry);
 
         // 2. Create Order
         const order = await OrderModel.create(
@@ -70,12 +95,14 @@ export const createOrder = async (req, res, next) => {
                     user: req.user?._id || null,
                     customerDetails,
                     orderItems: verifiedOrderItems,
-                    itemsPrice,
+                    itemsPrice: Number(itemsPrice) || 0,
                     taxPrice,
-                    shippingPrice: Number(shippingPrice),
-                    totalPrice,
+                    shippingPrice: safeShippingPrice,
+                    totalPrice: Number(totalPrice) || 0,
                     paymentMethod: paymentMethod || "COD",
-                    paymentStatus: paymentMethod === "Online" ? "Paid" : "Pending",
+                    paymentGateway: selectedGateway,
+                    detectedCountry,
+                    paymentStatus: "Pending",
                     orderStatus: "Pending",
                 },
             ],

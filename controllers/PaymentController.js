@@ -1,10 +1,56 @@
 import PayFastService from "../services/PayFastService.js";
 import StripeService from "../services/StripeService.js";
 import OrderModel from "../models/OrderSchema.js";
+import GeolocationService from "../services/GeolocationService.js";
+import PaymentProviderService from "../services/PaymentProviderService.js";
 
-// ─────────────────────────────────────────────
-//  PayFast  (Pakistan – redirection flow)
-// ─────────────────────────────────────────────
+/**
+ * GET /api/payment/location
+ * Detects visitor country from IP or request headers
+ */
+export const detectLocation = async (req, res) => {
+    try {
+        const detection = await GeolocationService.detectCountry(req);
+        const isPakistan = detection.isPakistan;
+        return res.status(200).json({
+            success: true,
+            countryCode: detection.countryCode,
+            countryName: detection.countryName,
+            isPakistan,
+            recommendedGateway: isPakistan ? "payfast" : "stripe",
+            detectionMethod: detection.detectionMethod,
+        });
+    } catch (error) {
+        return res.status(200).json({
+            success: true,
+            countryCode: "PK",
+            countryName: "Pakistan",
+            isPakistan: true,
+            recommendedGateway: "payfast",
+            detectionMethod: "error_fallback",
+        });
+    }
+};
+
+/**
+ * POST /api/payment/initialize
+ * Unified backend payment provider selection & session initializer.
+ * Automatically selects PayFast for PK, Stripe for all other countries.
+ */
+export const initializeUnifiedPayment = async (req, res, next) => {
+    try {
+        const { orderId, userMobileNumber } = req.body;
+        const result = await PaymentProviderService.initializePayment({
+            orderId,
+            req,
+            userMobileNumber,
+        });
+
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
 
 /**
  * POST /api/payment/payfast/initiate
@@ -161,6 +207,99 @@ export const handlePayFastCallback = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────
+//  Stripe  (International – Elements & Payment Intent)
+// ─────────────────────────────────────────────
+
+/**
+ * POST /api/payment/stripe/create-payment-intent
+ *
+ * Creates a Stripe PaymentIntent for embedded Stripe Elements.
+ */
+export const createStripePaymentIntent = async (req, res, next) => {
+    try {
+        const { orderId } = req.body;
+
+        if (!orderId) {
+            return res.status(400).json({ success: false, message: "orderId is required" });
+        }
+
+        const order = await OrderModel.findById(orderId);
+        if (!order) {
+            return res.status(404).json({ success: false, message: "Order not found" });
+        }
+
+        if (order.paymentStatus === "Paid") {
+            return res.status(400).json({ success: false, message: "Order is already paid" });
+        }
+
+        // Amount in cents
+        const amountInCents = Math.round(Number(order.totalPrice || 0) * 100);
+
+        if (amountInCents <= 0) {
+            return res.status(400).json({ success: false, message: "Invalid order amount" });
+        }
+
+        const paymentIntent = await StripeService.createPaymentIntent({
+            orderId: order._id.toString(),
+            orderNumber: order._id.toString(),
+            amountInCents,
+            customerEmail: order.customerDetails?.email,
+            currency: "usd",
+        });
+
+        // Save gateway info
+        order.paymentGateway = "Stripe";
+        order.paymentMethod = "Online";
+        order.gatewayTransactionId = paymentIntent.id;
+        await order.save();
+
+        res.status(200).json({
+            success: true,
+            clientSecret: paymentIntent.client_secret,
+            paymentIntentId: paymentIntent.id,
+            orderId: order._id,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/payment/stripe/confirm-payment
+ *
+ * Client notifies backend after Stripe Elements confirms payment.
+ */
+export const confirmStripePayment = async (req, res, next) => {
+    try {
+        const { orderId, paymentIntentId } = req.body;
+
+        if (!orderId) {
+            return res.status(400).json({ success: false, message: "orderId is required" });
+        }
+
+        const order = await OrderModel.findById(orderId);
+        if (!order) {
+            return res.status(404).json({ success: false, message: "Order not found" });
+        }
+
+        order.paymentStatus = "Paid";
+        order.orderStatus = "Processing";
+        if (paymentIntentId) {
+            order.gatewayTransactionId = paymentIntentId;
+        }
+        await order.save();
+
+        res.status(200).json({
+            success: true,
+            message: "Payment confirmed successfully",
+            order,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─────────────────────────────────────────────
 //  Stripe  (International – Checkout Session)
 // ─────────────────────────────────────────────
 
@@ -245,6 +384,38 @@ export const handleStripeWebhook = async (req, res) => {
 
     try {
         switch (event.type) {
+            case "payment_intent.succeeded": {
+                const paymentIntent = event.data.object;
+                const orderId = paymentIntent.metadata?.orderId;
+
+                if (orderId) {
+                    const order = await OrderModel.findById(orderId);
+                    if (order && order.paymentStatus !== "Paid") {
+                        order.paymentStatus = "Paid";
+                        order.orderStatus = "Processing";
+                        order.gatewayTransactionId = paymentIntent.id;
+                        await order.save();
+                        console.log(`✅ Stripe Elements payment confirmed for order ${orderId}`);
+                    }
+                }
+                break;
+            }
+
+            case "payment_intent.payment_failed": {
+                const paymentIntent = event.data.object;
+                const orderId = paymentIntent.metadata?.orderId;
+
+                if (orderId) {
+                    const order = await OrderModel.findById(orderId);
+                    if (order && order.paymentStatus === "Pending") {
+                        order.paymentStatus = "Failed";
+                        await order.save();
+                        console.log(`❌ Stripe PaymentIntent failed for order ${orderId}`);
+                    }
+                }
+                break;
+            }
+
             case "checkout.session.completed": {
                 const session = event.data.object;
                 const orderId = session.metadata?.orderId;

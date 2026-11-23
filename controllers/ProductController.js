@@ -2,6 +2,7 @@ import ProductModel from "../models/ProductSchema.js";
 import CategoryModel from "../models/CategorySchema.js";
 import slugify from "slugify";
 import { v2 as cloudinary } from "cloudinary";
+import mongoose from "mongoose";
 
 // Get all products with search, filtering, pagination, and region population
 export const getProducts = async (req, res, next) => {
@@ -10,10 +11,42 @@ export const getProducts = async (req, res, next) => {
         const query = {};
 
         if (search) {
-            query.name = { $regex: search, $options: "i" };
+            if (typeof search === 'object') {
+                if (search.badge) {
+                    query.badge = { $regex: search.badge, $options: "i" };
+                }
+                if (search.material) {
+                    query["variants.material"] = { $regex: search.material, $options: "i" };
+                }
+                if (search.color) {
+                    query["variants.colors.hex.colorName"] = { $regex: search.color, $options: "i" };
+                }
+            } else {
+                query.name = { $regex: search, $options: "i" };
+            }
         }
         if (category) {
-            query.category = category;
+            let catId = category;
+            if (!mongoose.Types.ObjectId.isValid(category)) {
+                const foundCategory = await CategoryModel.findOne({
+                    $or: [
+                        { slug: category },
+                        { name: { $regex: new RegExp(`^${category}$`, "i") } }
+                    ]
+                });
+                if (foundCategory) {
+                    catId = foundCategory._id;
+                } else {
+                    return res.status(404).json({
+                        success: false,
+                        message: `Category not found: ${category}`
+                    });
+                }
+            }
+            query.$or = [
+                { category: catId },
+                { categories: catId }
+            ];
         }
         if (isActive !== undefined) {
             query.isActive = isActive === "true";
@@ -22,6 +55,7 @@ export const getProducts = async (req, res, next) => {
         const skip = (Number(page) - 1) * Number(limit);
         const products = await ProductModel.find(query)
             .populate("category", "name slug")
+            .populate("categories", "name slug")
             .populate("accessories")
             .populate("pricing.region", "name code currency")
             .skip(skip)
@@ -35,7 +69,76 @@ export const getProducts = async (req, res, next) => {
             total,
             page: Number(page),
             pages: Math.ceil(total / Number(limit)),
+            pagination: {
+                total,
+                page: Number(page),
+                pages: Math.ceil(total / Number(limit)),
+                limit: Number(limit)
+            },
             products,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Get product filters (badges, colors, materials)
+export const getProductFilters = async (req, res, next) => {
+    try {
+        const { category } = req.query;
+        const query = {};
+
+        if (category) {
+            let catId = category;
+            if (!mongoose.Types.ObjectId.isValid(category)) {
+                const foundCategory = await CategoryModel.findOne({
+                    $or: [
+                        { slug: category },
+                        { name: { $regex: new RegExp(`^${category}$`, "i") } }
+                    ]
+                });
+                if (foundCategory) {
+                    catId = foundCategory._id;
+                }
+            }
+            if (mongoose.Types.ObjectId.isValid(catId)) {
+                query.$or = [
+                    { category: catId },
+                    { categories: catId }
+                ];
+            }
+        }
+
+        const products = await ProductModel.find(query).select("badge variants");
+
+        const badgesSet = new Set();
+        const colorsSet = new Set();
+        const materialsSet = new Set();
+
+        products.forEach(p => {
+            if (p.badge) badgesSet.add(p.badge);
+            if (p.variants && Array.isArray(p.variants)) {
+                p.variants.forEach(v => {
+                    if (v.material) materialsSet.add(v.material);
+                    if (v.colors && Array.isArray(v.colors)) {
+                        v.colors.forEach(c => {
+                            if (c.hex) {
+                                if (c.hex.colorName) colorsSet.add(c.hex.colorName);
+                                if (c.hex.code && !c.hex.colorName) colorsSet.add(c.hex.code);
+                            }
+                        });
+                    }
+                });
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            filters: {
+                badges: Array.from(badgesSet),
+                colors: Array.from(colorsSet),
+                materials: Array.from(materialsSet),
+            }
         });
     } catch (error) {
         next(error);
@@ -67,6 +170,12 @@ export const getProductDropdownList = async (req, res, next) => {
             total,
             page: Number(page),
             pages: Math.ceil(total / Number(limit)),
+            pagination: {
+                total,
+                page: Number(page),
+                pages: Math.ceil(total / Number(limit)),
+                limit: Number(limit)
+            },
             products,
         });
     } catch (error) {
@@ -74,17 +183,30 @@ export const getProductDropdownList = async (req, res, next) => {
     }
 };
 
-// Get single product with region pricing and accessories populated
+// Get single product with region pricing and accessories populated (supports lookup by _id or slug)
 export const getSingleProduct = async (req, res, next) => {
     try {
-        const product = await ProductModel.findById(req.params.id)
-            .populate("category", "name slug")
-            .populate("accessories")
-            .populate("pricing.region", "name code currency");
+        const identifier = req.params.id;
+        let product;
+
+        if (mongoose.Types.ObjectId.isValid(identifier)) {
+            product = await ProductModel.findById(identifier);
+        } else {
+            product = await ProductModel.findOne({ slug: identifier });
+        }
 
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found" });
         }
+
+        // Populate references
+        await product.populate([
+            { path: "category", select: "name slug" },
+            { path: "categories", select: "name slug" },
+            { path: "accessories" },
+            { path: "pricing.region", select: "name code currency" }
+        ]);
+
         res.status(200).json({ success: true, product });
     } catch (error) {
         next(error);
@@ -94,9 +216,9 @@ export const getSingleProduct = async (req, res, next) => {
 // Create product with stock management, accessories, and regional pricing
 export const createProduct = async (req, res, next) => {
     try {
-        let { name, description, price, comparePrice, stock, sku, lowStockThreshold, category, isActive, accessories, pricing } = req.body;
+        let { name, description, price, comparePrice, stock, sku, lowStockThreshold, category, categories, isActive, accessories, pricing } = req.body;
 
-        if (!name || price === undefined || stock === undefined || !category) {
+        if (!name || price === undefined || stock === undefined || (!category && (!categories || categories.length === 0))) {
             return res.status(400).json({ success: false, message: "Please provide name, price, stock, and category" });
         }
 
@@ -138,6 +260,15 @@ export const createProduct = async (req, res, next) => {
             }
         }
 
+        let parsedCategories = [];
+        if (categories) {
+            try {
+                parsedCategories = typeof categories === 'string' ? JSON.parse(categories) : categories;
+            } catch (e) {
+                parsedCategories = Array.isArray(categories) ? categories : [categories];
+            }
+        }
+
         const product = await ProductModel.create({
             name,
             slug: uniqueSlug,
@@ -147,25 +278,25 @@ export const createProduct = async (req, res, next) => {
             stock: Number(stock),
             sku: sku || undefined,
             lowStockThreshold: lowStockThreshold ? Number(lowStockThreshold) : 5,
-            category,
+            category: category || (parsedCategories[0] ? parsedCategories[0] : undefined),
+            categories: parsedCategories,
             images,
-            isActive: isActive !== undefined ? isActive : true,
+            isActive: isActive !== undefined ? isActive === "true" || isActive === true : true,
             accessories: parsedAccessories,
             pricing: parsedPricing,
         });
 
-        const populatedProduct = await ProductModel.findById(product._id)
-            .populate("category", "name slug")
-            .populate("accessories")
-            .populate("pricing.region", "name code currency");
-
-        res.status(201).json({ success: true, product: populatedProduct });
+        res.status(201).json({
+            success: true,
+            message: "Product created successfully",
+            product,
+        });
     } catch (error) {
         next(error);
     }
 };
 
-// Update product with regional pricing support
+// Update product
 export const updateProduct = async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -173,22 +304,6 @@ export const updateProduct = async (req, res, next) => {
 
         if (updateData.name) {
             updateData.slug = slugify(updateData.name, { lower: true, strict: true });
-        }
-
-        if (updateData.accessories) {
-            try {
-                updateData.accessories = typeof updateData.accessories === 'string'
-                    ? JSON.parse(updateData.accessories)
-                    : updateData.accessories;
-            } catch (e) {}
-        }
-
-        if (updateData.pricing) {
-            try {
-                updateData.pricing = typeof updateData.pricing === 'string'
-                    ? JSON.parse(updateData.pricing)
-                    : updateData.pricing;
-            } catch (e) {}
         }
 
         if (req.files && req.files.images) {
@@ -203,16 +318,39 @@ export const updateProduct = async (req, res, next) => {
             updateData.images = images;
         }
 
-        const product = await ProductModel.findByIdAndUpdate(id, updateData, { new: true, runValidators: true })
-            .populate("category", "name slug")
-            .populate("accessories")
-            .populate("pricing.region", "name code currency");
+        if (updateData.accessories && typeof updateData.accessories === 'string') {
+            try {
+                updateData.accessories = JSON.parse(updateData.accessories);
+            } catch (e) {}
+        }
+
+        if (updateData.pricing && typeof updateData.pricing === 'string') {
+            try {
+                updateData.pricing = JSON.parse(updateData.pricing);
+            } catch (e) {}
+        }
+
+        if (updateData.categories && typeof updateData.categories === 'string') {
+            try {
+                updateData.categories = JSON.parse(updateData.categories);
+            } catch (e) {}
+        }
+
+        const queryId = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { slug: id };
+        const product = await ProductModel.findOneAndUpdate(queryId, updateData, {
+            new: true,
+            runValidators: true,
+        });
 
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found" });
         }
 
-        res.status(200).json({ success: true, product });
+        res.status(200).json({
+            success: true,
+            message: "Product updated successfully",
+            product,
+        });
     } catch (error) {
         next(error);
     }
@@ -221,42 +359,48 @@ export const updateProduct = async (req, res, next) => {
 // Delete product
 export const deleteProduct = async (req, res, next) => {
     try {
-        const product = await ProductModel.findByIdAndDelete(req.params.id);
+        const { id } = req.params;
+        const queryId = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { slug: id };
+        const product = await ProductModel.findOneAndDelete(queryId);
+
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found" });
         }
-        res.status(200).json({ success: true, message: "Product deleted successfully" });
+
+        res.status(200).json({
+            success: true,
+            message: "Product deleted successfully",
+        });
     } catch (error) {
         next(error);
     }
 };
 
-// Inventory Adjustment API (Restock / Manual Adjustment with audit logging capability)
+// Adjust stock
 export const adjustStock = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { adjustment, type } = req.body; // type: 'add' or 'set', adjustment: number
+        const { quantity, operation = "set" } = req.body;
 
-        if (adjustment === undefined) {
-            return res.status(400).json({ success: false, message: "Adjustment value is required" });
-        }
-
-        const product = await ProductModel.findById(id);
+        const queryId = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { slug: id };
+        const product = await ProductModel.findOne(queryId);
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found" });
         }
 
-        if (type === "set") {
-            product.stock = Number(adjustment);
+        if (operation === "add") {
+            product.stock += Number(quantity);
+        } else if (operation === "subtract") {
+            product.stock = Math.max(0, product.stock - Number(quantity));
         } else {
-            product.stock = Math.max(0, product.stock + Number(adjustment));
+            product.stock = Number(quantity);
         }
 
         await product.save();
 
         res.status(200).json({
             success: true,
-            message: "Stock adjusted successfully",
+            message: "Product stock adjusted successfully",
             product,
         });
     } catch (error) {

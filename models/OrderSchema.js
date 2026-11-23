@@ -31,6 +31,7 @@ const OrderSchema = new mongoose.Schema(
             enum: ["PayFast", "Stripe", "COD"],
             default: "COD",
         },
+        detectedCountry: { type: String },
         gatewayTransactionId: { type: String },
         paymentStatus: {
             type: String,
