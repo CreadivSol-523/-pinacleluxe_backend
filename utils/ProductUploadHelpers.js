@@ -132,7 +132,7 @@ export async function buildProcessedVariants(variants, files) {
             if (typeof hexVal === "string") {
                hexObj = { code: hexVal.trim(), colorName: String(color.colorName || "").trim() };
             } else if (hexVal && typeof hexVal === "object") {
-               hexObj = { code: String(hexVal.code || "").trim(), colorName: String(color.colorName || "").trim() };
+               hexObj = { code: String(hexVal.code || "").trim(), colorName: String(hexVal.colorName || "").trim() };
             } else {
                throw Object.assign(new Error("Each color must include a hex.code"), { status: 400 });
             }
@@ -209,7 +209,7 @@ export async function buildProcessedVariantsForUpdate(variants, files, previousV
             if (typeof hexVal === "string") {
                hexObj = { code: hexVal.trim(), colorName: String(color.colorName || "").trim() };
             } else if (hexVal && typeof hexVal === "object") {
-               hexObj = { code: String(hexVal.code || "").trim(), colorName: String(color.colorName || "").trim() };
+               hexObj = { code: String(hexVal.code || "").trim(), colorName: String(hexVal.colorName || "").trim() };
             } else {
                throw Object.assign(new Error("Each color must include a hex.code"), { status: 400 });
             }

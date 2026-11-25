@@ -1,66 +1,116 @@
 import mongoose from "mongoose";
 
-const ProductSchema = new mongoose.Schema(
-    {
-        name: { type: String, required: true, trim: true },
-        slug: { type: String, required: true, unique: true, index: true },
-        description: { type: String },
-
-        // Base / Default Price
-        price: { type: Number, required: true, min: 0 },
-        comparePrice: { type: Number, min: 0 },
-
-        // Regional Pricing: maps region reference to its specific price
-        pricing: [
-            {
-                region: { type: mongoose.Schema.Types.ObjectId, ref: "Region", required: true },
-                price: { type: Number, required: true, min: 0 },
-                comparePrice: { type: Number, min: 0 },
-            }
-        ],
-
-        // Inventory Stock Management fields
-        stock: { type: Number, required: true, min: 0, default: 0 },
-        sku: { type: String, unique: true, sparse: true },
-        lowStockThreshold: { type: Number, default: 5 },
-        category: { type: mongoose.Schema.Types.ObjectId, ref: "Category" },
-        categories: [{ type: mongoose.Schema.Types.ObjectId, ref: "Category" }],
-        images: [{ type: String }],
-        thumbnail: [{ type: String }],
-        isActive: { type: Boolean, default: true, index: true },
-
-        // Product Badge / Tag (e.g. Featured, New, Bestseller)
-        badge: { type: String },
-
-        // Product Variants (Material, Color options)
-        variants: [
-            {
-                material: { type: String },
-                price: [
-                    {
-                        region: { type: mongoose.Schema.Types.ObjectId, ref: "Region" },
-                        price: { type: Number },
-                        discountMode: { type: String },
-                        discountValue: { type: Number },
-                    }
-                ],
-                colors: [
-                    {
-                        hex: {
-                            code: { type: String },
-                            colorName: { type: String }
-                        },
-                        images: [{ type: String }]
-                    }
-                ]
-            }
-        ],
-
-        // Sub-products / Accessories relation
-        accessories: [{ type: mongoose.Schema.Types.ObjectId, ref: "Product" }],
-    },
-    { timestamps: true }
+const VariantColorSchema = new mongoose.Schema(
+   {
+      hex: {
+         code: { type: String, trim: true },
+         colorName: { type: String, trim: true },
+      },
+      images: [{ type: String, trim: true }],
+   },
+   { _id: false },
 );
+
+const RegionPriceSchema = new mongoose.Schema(
+   {
+      region: {
+         type: mongoose.Schema.Types.ObjectId,
+         ref: "Region",
+         required: true,
+      },
+
+      price: {
+         type: Number,
+         required: true,
+         min: 0,
+      },
+
+      discountMode: {
+         type: String,
+         enum: ["percentage", "static"],
+      },
+
+      discountValue: {
+         type: Number,
+         default: 0,
+         min: 0,
+      },
+   },
+   { _id: false },
+);
+
+const VariantSchema = new mongoose.Schema(
+   {
+      material: { type: String, required: true, trim: true },
+      price: [RegionPriceSchema],
+      colors: { type: [VariantColorSchema], default: [] },
+   },
+   { _id: false },
+);
+
+const ProductSchema = new mongoose.Schema(
+   {
+      name: { type: String, required: true, trim: true, index: true },
+      slug: {
+         type: String,
+         required: true,
+         unique: true,
+         index: true,
+         trim: true,
+      },
+      description: { type: String, trim: true },
+      categories: {
+         type: [
+            {
+               type: mongoose.Schema.Types.ObjectId,
+               ref: "Category",
+            },
+         ],
+         required: true,
+         validate: {
+            validator(v) {
+               return Array.isArray(v) && v.length > 0;
+            },
+            message: "At least one category is required",
+         },
+         index: true,
+      },
+      badge: { type: String, trim: true },
+      isVariable: {
+         type: Boolean,
+         default: true,
+      },
+      pricing: {
+         type: [RegionPriceSchema],
+         default: [],
+      },
+      images: {
+         type: [{ type: String, trim: true }],
+         default: [],
+      },
+      thumbnail: {
+         type: [{ type: String, trim: true }],
+         default: [],
+      },
+      variants: {
+         type: [VariantSchema],
+         default: [],
+      },
+      stock: {
+         type: Number,
+         default: 0,
+         min: 0,
+      },
+      // Sub-products / Accessories relation
+      accessories: [{ type: mongoose.Schema.Types.ObjectId, ref: "Product" }],
+   },
+   { timestamps: true },
+);
+
+ProductSchema.index({ createdAt: -1 });
+// added indexes
+ProductSchema.index({ categories: 1, createdAt: -1 });
+ProductSchema.index({ badge: 1 });
 
 const ProductModel = mongoose.model("Product", ProductSchema);
 
