@@ -104,7 +104,7 @@ export async function buildProcessedVariants(variants, files) {
       const processedPrice = [];
       for (const priceItem of price) {
          const { region: regionRef, price: regionPrice, discountMode, discountValue } = priceItem;
-
+         console.log({ regionRef, regionPrice });
          if (!regionRef || regionPrice == null) {
             throw Object.assign(new Error("Each price entry must include a region and price"), { status: 400 });
          }
@@ -181,7 +181,7 @@ export async function buildProcessedVariantsForUpdate(variants, files, previousV
       const processedPrice = [];
       for (const priceItem of price) {
          const { region: regionRef, price: regionPrice, discountMode, discountValue } = priceItem;
-
+         console.log(price);
          if (!regionRef || regionPrice == null) {
             throw Object.assign(new Error("Each price entry must include a region and price"), { status: 400 });
          }

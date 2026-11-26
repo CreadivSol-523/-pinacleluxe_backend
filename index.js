@@ -13,6 +13,7 @@ import SecurityHeaders from "./middlewares/HelmetMiddleware.js";
 import connectDB from "./config/DB.js";
 
 // Routes
+import AdminAuthRoute from "./routes/AdminAuthRoutes.js";
 import CategoryRoutes from "./routes/CategoryRoutes.js";
 import ProductRoutes from "./routes/ProductRoutes.js";
 import OrderRoutes from "./routes/OrderRoutes.js";
@@ -27,6 +28,7 @@ import { allowedOrigins } from "./utils/AllowedOrigins.js";
 // Cloudinary
 import { v2 as cloudinary } from "cloudinary";
 import fileUpload from "express-fileupload";
+import cookieParser from "cookie-parser";
 
 dotenv.config();
 
@@ -38,11 +40,7 @@ app.use(SecurityHeaders);
 connectDB();
 
 // === Stripe Webhook Route (Requires raw body) ===
-app.post(
-   "/api/payment/stripe/webhook",
-   express.raw({ type: "application/json" }),
-   handleStripeWebhook
-);
+app.post("/api/payment/stripe/webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
 
 // === Global Middlewares ===
 app.use(express.json());
@@ -82,8 +80,9 @@ app.use(RateLimiter);
 
 // === Logger Middleware for logging errors
 app.use(ErrorLogger);
-
+app.use(cookieParser());
 // === Routes ===
+app.use("/api/auth", AdminAuthRoute);
 app.use("/api/category", CategoryRoutes);
 app.use("/api/product", ProductRoutes);
 app.use("/api/order", OrderRoutes);

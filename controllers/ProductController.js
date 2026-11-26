@@ -4,7 +4,7 @@ import slugify from "slugify";
 import { v2 as cloudinary } from "cloudinary";
 import mongoose from "mongoose";
 import RegionModel from "../models/RegionSchema.js";
-import { buildProcessedVariants, uploadMany } from "../utils/ProductUploadHelpers.js";
+import { buildProcessedVariants, buildProcessedVariantsForUpdate, collectVariantImageUrls, destroyCloudinaryUrls, uploadMany } from "../utils/ProductUploadHelpers.js";
 
 // Regex special chars escape (ReDoS / injection se bachne ke liye)
 const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -367,7 +367,7 @@ export const getProductDropdownList = async (req, res, next) => {
 export const getSingleProduct = async (req, res, next) => {
    try {
       const identifier = req.params.id;
-      const { regionCode } = req.query;
+      const regionCode = typeof req.query.regionCode === "string" ? req.query.regionCode.trim().toUpperCase() : "";
 
       let product;
 
@@ -385,39 +385,34 @@ export const getSingleProduct = async (req, res, next) => {
       }
 
       await product.populate([
-         {
-            path: "categories",
-            select: "name slug",
-         },
-         {
-            path: "accessories",
-            select: "name slug _id thumbnail pricing variants",
-         },
-         {
-            path: "pricing.region",
-            select: "name code currency",
-         },
-         {
-            path: "variants.price.region",
-            select: "name code currency",
-         },
+         { path: "categories", select: "name slug" },
+         { path: "accessories", select: "name slug _id thumbnail pricing variants" },
+         { path: "pricing.region", select: "name code currency" },
+         { path: "variants.price.region", select: "name code currency" },
       ]);
 
-      // Filter pricing by country code
+      const result = product.toObject();
+
+      // regionCode aaye to filter, lekin match na mile to saara original price rakho
       if (regionCode) {
-         const code = regionCode.toUpperCase();
+         const matchRegion = (item) => item.region?.code?.toUpperCase() === regionCode;
 
-         product.pricing = product.pricing.filter((item) => item.region?.code?.toUpperCase() === code);
+         const filterWithFallback = (list = []) => {
+            const matched = list.filter(matchRegion);
+            return matched.length > 0 ? matched : list;
+         };
 
-         product.variants = product.variants.map((variant) => ({
-            ...variant.toObject(),
-            price: variant.price.filter((item) => item.region?.code?.toUpperCase() === code),
+         result.pricing = filterWithFallback(result.pricing);
+
+         result.variants = (result.variants ?? []).map((variant) => ({
+            ...variant,
+            price: filterWithFallback(variant.price),
          }));
       }
 
       res.status(200).json({
          success: true,
-         product,
+         product: result,
       });
    } catch (error) {
       next(error);
@@ -584,7 +579,7 @@ export const createProduct = async (req, res) => {
          const processedPricing = [];
          for (const entry of pricing) {
             const { region: regionRef, price: regionPrice, discountMode, discountValue } = entry || {};
-
+            console.log(regionRef);
             if (!regionRef || regionPrice == null) {
                return res.status(400).json({
                   success: false,
@@ -679,62 +674,179 @@ export const createProduct = async (req, res) => {
 };
 
 // Update product
-export const updateProduct = async (req, res, next) => {
+export const updateProduct = async (req, res) => {
    try {
-      const { id } = req.params;
-      let updateData = { ...req.body };
+      const updateData = { ...req.body };
+      delete updateData.images;
+      delete updateData.thumbnail;
 
-      if (updateData.name) {
-         updateData.slug = slugify(updateData.name, { lower: true, strict: true });
-      }
-
-      if (req.files && req.files.images) {
-         let images = [];
-         const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
-         for (const file of files) {
-            const upload = await cloudinary.uploader.upload(file.tempFilePath, {
-               folder: "products",
-            });
-            images.push(upload.secure_url);
-         }
-         updateData.images = images;
-      }
-
-      if (updateData.accessories && typeof updateData.accessories === "string") {
-         try {
-            updateData.accessories = JSON.parse(updateData.accessories);
-         } catch (e) {}
-      }
-
-      if (updateData.pricing && typeof updateData.pricing === "string") {
-         try {
-            updateData.pricing = JSON.parse(updateData.pricing);
-         } catch (e) {}
-      }
-
-      if (updateData.categories && typeof updateData.categories === "string") {
-         try {
-            updateData.categories = JSON.parse(updateData.categories);
-         } catch (e) {}
-      }
-
-      const queryId = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { slug: id };
-      const product = await ProductModel.findOneAndUpdate(queryId, updateData, {
-         new: true,
-         runValidators: true,
-      });
+      const product = await ProductModel.findById(req.params.id);
 
       if (!product) {
-         return res.status(404).json({ success: false, message: "Product not found" });
+         return res.status(404).json({
+            success: false,
+            message: "Product not found",
+         });
       }
 
-      res.status(200).json({
+      if (updateData.name) {
+         const slug = slugify(updateData.name, {
+            lower: true,
+            strict: true,
+         });
+
+         let uniqueSlug = slug;
+         let count = 1;
+
+         while (
+            await ProductModel.findOne({
+               slug: uniqueSlug,
+               _id: { $ne: product._id },
+            })
+         ) {
+            uniqueSlug = `${slug}-${count++}`;
+         }
+
+         updateData.slug = uniqueSlug;
+      }
+
+      if (typeof updateData.categories === "string") {
+         updateData.categories = JSON.parse(updateData.categories);
+      }
+
+      if (updateData.categories) {
+         if (!Array.isArray(updateData.categories)) {
+            return res.status(400).json({
+               success: false,
+               message: "categories must be an array",
+            });
+         }
+
+         const invalidIds = updateData.categories.filter((id) => !mongoose.Types.ObjectId.isValid(id));
+
+         if (invalidIds.length) {
+            return res.status(400).json({
+               success: false,
+               message: "Invalid category IDs",
+               invalidIds,
+            });
+         }
+
+         const existing = await CategoryModel.find({
+            _id: { $in: updateData.categories },
+         });
+
+         if (existing.length !== updateData.categories.length) {
+            return res.status(400).json({
+               success: false,
+               message: "Some categories do not exist",
+            });
+         }
+      }
+
+      if (typeof updateData.variants === "string") {
+         updateData.variants = JSON.parse(updateData.variants);
+      }
+
+      if (typeof updateData.pricing === "string") {
+         updateData.pricing = JSON.parse(updateData.pricing);
+      }
+
+      if (updateData.pricing != null && !Array.isArray(updateData.pricing)) {
+         return res.status(400).json({
+            success: false,
+            message: "pricing must be an array",
+         });
+      }
+
+      // If pricing provided in update, resolve region refs
+      if (Array.isArray(updateData.pricing) && updateData.pricing.length > 0) {
+         const processedPricing = [];
+         for (const entry of updateData.pricing) {
+            const { region: regionRef, price: regionPrice, discountMode, discountValue } = entry || {};
+
+            if (!regionRef || regionPrice == null) {
+               return res.status(400).json({
+                  success: false,
+                  message: "Each pricing entry must include region and price",
+               });
+            }
+            let region;
+            if (mongoose.Types.ObjectId.isValid(regionRef)) {
+               region = await RegionModel.findById(regionRef);
+            } else if (typeof regionRef === "string") {
+               region = await RegionModel.findOne({ code: regionRef.toUpperCase().trim() });
+            }
+
+            if (!region) {
+               return res.status(400).json({
+                  success: false,
+                  message: `Region not found: ${regionRef}`,
+               });
+            }
+
+            processedPricing.push({
+               region: region._id,
+               price: Number(regionPrice),
+               discountMode,
+               discountValue: discountValue || 0,
+            });
+         }
+
+         updateData.pricing = processedPricing;
+      }
+
+      if (updateData.variants) {
+         if (!Array.isArray(updateData.variants)) {
+            return res.status(400).json({
+               success: false,
+               message: "variants must be an array",
+            });
+         }
+
+         const oldVariantUrls = collectVariantImageUrls(product.variants);
+         console.log(updateData.variants[0]);
+         try {
+            updateData.variants = await buildProcessedVariantsForUpdate(updateData.variants, req.files, product.variants);
+         } catch (e) {
+            const status = e.status || 400;
+            return res.status(status).json({
+               success: false,
+               message: e.message,
+            });
+         }
+
+         const newVariantUrlSet = new Set(collectVariantImageUrls(updateData.variants));
+         await destroyCloudinaryUrls(oldVariantUrls.filter((u) => !newVariantUrlSet.has(u)));
+      }
+
+      if (req.files?.productImages) {
+         const newProductImages = await uploadMany(req.files.productImages, "products");
+         if (newProductImages.length > 0) {
+            await destroyCloudinaryUrls(product.images || []);
+            updateData.images = newProductImages;
+         }
+      }
+
+      if (req.files?.thumbnails || req.files?.thumbnail) {
+         const newThumbnails = await uploadMany(req.files.thumbnails || req.files.thumbnail, "products/thumbnails");
+         if (newThumbnails.length > 0) {
+            await destroyCloudinaryUrls(product.thumbnail || []);
+            updateData.thumbnail = newThumbnails;
+         }
+      }
+
+      const updated = await ProductModel.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
+
+      res.json({
          success: true,
-         message: "Product updated successfully",
-         product,
+         product: updated,
       });
    } catch (error) {
-      next(error);
+      res.status(500).json({
+         success: false,
+         error: error.message,
+      });
    }
 };
 
