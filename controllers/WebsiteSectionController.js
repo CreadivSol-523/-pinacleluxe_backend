@@ -1,4 +1,4 @@
-import WebsiteSection from "../models/websiteSection.js";
+import WebsiteSection from "../models/WebsiteSection.js";
 import { uploadMany } from "../utils/ProductUploadHelpers.js";
 
 // GET ALL SECTIONS
