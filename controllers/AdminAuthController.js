@@ -52,6 +52,7 @@ const cookieOptions = (cfg, maxAge) => ({
    sameSite: cfg.sameSite,
    maxAge,
    path: "/",
+   ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
 });
 
 // Login me user na mile tab bhi bcrypt chalao taake timing se pata na chale ke email exist karta hai
