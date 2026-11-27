@@ -4,7 +4,8 @@ import slugify from "slugify";
 import { v2 as cloudinary } from "cloudinary";
 import mongoose from "mongoose";
 import RegionModel from "../models/RegionSchema.js";
-import { buildProcessedVariants, buildProcessedVariantsForUpdate, collectVariantImageUrls, destroyCloudinaryUrls, uploadMany } from "../utils/ProductUploadHelpers.js";
+import { buildProcessedVariants, buildProcessedVariantsForUpdate, buildVariantsFromUrls, collectVariantImageUrls, destroyCloudinaryUrls, uploadMany } from "../utils/ProductUploadHelpers.js";
+import { assertCloudinaryUrl, parseUrlList } from "../utils/cloudinaryUrl.js";
 
 // Regex special chars escape (ReDoS / injection se bachne ke liye)
 const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -420,171 +421,198 @@ export const getSingleProduct = async (req, res, next) => {
 };
 
 // Create product with stock management, accessories, and regional pricing
-// export const createProduct = async (req, res, next) => {
+// export const createProduct = async (req, res) => {
 //    try {
-//       let { name, description, price, comparePrice, stock, sku, lowStockThreshold, category, categories, isActive, accessories, pricing } = req.body;
+//       let { name, description, categories, badge, isVariable, pricing, variants, stock, accessories } = req.body;
 
-//       console.log({ name, description, price, comparePrice, stock, sku, lowStockThreshold, category, categories, isActive, accessories, pricing });
-//       if (!name || price === undefined || stock === undefined || (!category && (!categories || categories.length === 0))) {
-//          return res.status(400).json({ success: false, message: "Please provide name, price, stock, and category" });
+//       if (!name) {
+//          return res.status(400).json({
+//             success: false,
+//             message: "Name is required",
+//          });
 //       }
-//       let images = [];
-//       if (req.files && req.files.images) {
-//          const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
-//          for (const file of files) {
-//             const upload = await cloudinary.uploader.upload(file.tempFilePath, {
-//                folder: "products",
+
+//       if (typeof categories === "string") {
+//          categories = JSON.parse(categories);
+//       }
+
+//       if (!Array.isArray(categories) || categories.length === 0) {
+//          return res.status(400).json({
+//             success: false,
+//             message: "categories must be a non-empty array",
+//          });
+//       }
+
+//       //   if (accessories.length > 0 && !Array.isArray(accessories)) {
+//       //      return res.status(400).json({
+//       //         success: false,
+//       //         message: "accessories must be in array",
+//       //      });
+//       //   }
+
+//       const existingCategories = await CategoryModel.find({
+//          _id: { $in: categories },
+//       });
+
+//       if (existingCategories.length !== categories.length) {
+//          return res.status(400).json({
+//             success: false,
+//             message: "Invalid categories",
+//          });
+//       }
+
+//       if (typeof pricing === "string") {
+//          pricing = JSON.parse(pricing);
+//       }
+
+//       if (pricing != null && !Array.isArray(pricing)) {
+//          return res.status(400).json({
+//             success: false,
+//             message: "pricing must be an array",
+//          });
+//       }
+//       if (isVariable === false && (!pricing || pricing.length === 0)) {
+//          return res.status(400).json({
+//             success: false,
+//             message: "Non-variable products must include pricing",
+//          });
+//       }
+
+//       // Validate and resolve top-level pricing region references to ObjectIds
+//       if (Array.isArray(pricing) && pricing.length > 0) {
+//          const processedPricing = [];
+//          for (const entry of pricing) {
+//             const { region: regionRef, price: regionPrice, discountMode, discountValue } = entry || {};
+//             console.log(regionRef);
+//             if (!regionRef || regionPrice == null) {
+//                return res.status(400).json({
+//                   success: false,
+//                   message: "Each pricing entry must include region and price",
+//                });
+//             }
+
+//             let region;
+//             if (mongoose.Types.ObjectId.isValid(regionRef)) {
+//                region = await RegionModel.findById(regionRef);
+//             } else if (typeof regionRef === "string") {
+//                region = await RegionModel.findOne({ code: regionRef.toUpperCase().trim() });
+//             }
+
+//             if (!region) {
+//                return res.status(400).json({
+//                   success: false,
+//                   message: `Region not found: ${regionRef}`,
+//                });
+//             }
+
+//             processedPricing.push({
+//                region: region._id,
+//                price: Number(regionPrice),
+//                discountMode,
+//                discountValue: discountValue || 0,
 //             });
-//             images.push(upload.secure_url);
 //          }
+
+//          pricing = processedPricing;
 //       }
+
+//       if (typeof variants === "string") {
+//          variants = JSON.parse(variants);
+//       }
+
+//       if (!Array.isArray(variants)) {
+//          return res.status(400).json({
+//             success: false,
+//             message: "variants must be an array",
+//          });
+//       }
+
+//       let processedVariants;
+//       try {
+//          processedVariants = await buildProcessedVariants(variants, req.files);
+//       } catch (e) {
+//          const status = e.status || 500;
+//          return res.status(status).json({
+//             success: false,
+//             message: e.message,
+//          });
+//       }
+
+//       const images = await uploadMany(req.files?.productImages, "products");
+//       const thumbnails = await uploadMany(req.files?.thumbnails || req.files?.thumbnail, "products/thumbnails");
 
 //       const slug = slugify(name, { lower: true, strict: true });
+
 //       let uniqueSlug = slug;
 //       let count = 1;
+
 //       while (await ProductModel.findOne({ slug: uniqueSlug })) {
 //          uniqueSlug = `${slug}-${count++}`;
 //       }
 
-//       // Parse accessories if passed as JSON string or array
-//       let parsedAccessories = [];
-//       if (accessories) {
-//          try {
-//             parsedAccessories = typeof accessories === "string" ? JSON.parse(accessories) : accessories;
-//          } catch (e) {
-//             parsedAccessories = Array.isArray(accessories) ? accessories : [accessories];
-//          }
-//       }
-
-//       // Parse pricing if passed as JSON string or array
-//       let parsedPricing = [];
-//       if (pricing) {
-//          try {
-//             parsedPricing = typeof pricing === "string" ? JSON.parse(pricing) : pricing;
-//          } catch (e) {
-//             parsedPricing = Array.isArray(pricing) ? pricing : [pricing];
-//          }
-//       }
-
-//       let parsedCategories = [];
-//       if (categories) {
-//          try {
-//             parsedCategories = typeof categories === "string" ? JSON.parse(categories) : categories;
-//          } catch (e) {
-//             parsedCategories = Array.isArray(categories) ? categories : [categories];
-//          }
-//       }
-//       console.log({
-//          name,
-//          slug: uniqueSlug,
-//          description,
-//          price: Number(price),
-//          comparePrice: comparePrice ? Number(comparePrice) : undefined,
-//          stock: Number(stock),
-//          sku: sku || undefined,
-//          lowStockThreshold: lowStockThreshold ? Number(lowStockThreshold) : 5,
-//          category: category || (parsedCategories[0] ? parsedCategories[0] : undefined),
-//          categories: parsedCategories,
-//          images,
-//          isActive: isActive !== undefined ? isActive === "true" || isActive === true : true,
-//          accessories: parsedAccessories,
-//          pricing: parsedPricing,
-//       });
 //       const product = await ProductModel.create({
 //          name,
 //          slug: uniqueSlug,
 //          description,
-//          price: Number(price),
-//          comparePrice: comparePrice ? Number(comparePrice) : undefined,
-//          stock: Number(stock),
-//          sku: sku || undefined,
-//          lowStockThreshold: lowStockThreshold ? Number(lowStockThreshold) : 5,
-//          category: category || (parsedCategories[0] ? parsedCategories[0] : undefined),
-//          categories: parsedCategories,
+//          categories,
+//          accessories,
+//          badge,
+//          isVariable,
+//          pricing,
+//          variants: processedVariants,
+//          stock,
 //          images,
-//          isActive: isActive !== undefined ? isActive === "true" || isActive === true : true,
-//          accessories: parsedAccessories,
-//          pricing: parsedPricing,
+//          thumbnail: thumbnails,
 //       });
 
 //       res.status(201).json({
 //          success: true,
-//          message: "Product created successfully",
 //          product,
 //       });
 //    } catch (error) {
-//       console.log(error);
-//       next(error);
+//       res.status(500).json({
+//          success: false,
+//          error: error.message,
+//       });
 //    }
 // };
 export const createProduct = async (req, res) => {
    try {
-      let { name, description, categories, badge, isVariable, pricing, variants, stock, accessories } = req.body;
+      let { name, description, categories, badge, isVariable, pricing, variants, stock, accessories, thumbnail, productImages } = req.body;
 
       if (!name) {
-         return res.status(400).json({
-            success: false,
-            message: "Name is required",
-         });
+         return res.status(400).json({ success: false, message: "Name is required" });
       }
 
-      if (typeof categories === "string") {
-         categories = JSON.parse(categories);
-      }
+      if (typeof categories === "string") categories = JSON.parse(categories);
 
       if (!Array.isArray(categories) || categories.length === 0) {
-         return res.status(400).json({
-            success: false,
-            message: "categories must be a non-empty array",
-         });
+         return res.status(400).json({ success: false, message: "categories must be a non-empty array" });
       }
 
-      //   if (accessories.length > 0 && !Array.isArray(accessories)) {
-      //      return res.status(400).json({
-      //         success: false,
-      //         message: "accessories must be in array",
-      //      });
-      //   }
-
-      const existingCategories = await CategoryModel.find({
-         _id: { $in: categories },
-      });
-
+      const existingCategories = await CategoryModel.find({ _id: { $in: categories } });
       if (existingCategories.length !== categories.length) {
-         return res.status(400).json({
-            success: false,
-            message: "Invalid categories",
-         });
+         return res.status(400).json({ success: false, message: "Invalid categories" });
       }
 
-      if (typeof pricing === "string") {
-         pricing = JSON.parse(pricing);
-      }
+      if (typeof pricing === "string") pricing = JSON.parse(pricing);
 
       if (pricing != null && !Array.isArray(pricing)) {
-         return res.status(400).json({
-            success: false,
-            message: "pricing must be an array",
-         });
-      }
-      if (isVariable === false && (!pricing || pricing.length === 0)) {
-         return res.status(400).json({
-            success: false,
-            message: "Non-variable products must include pricing",
-         });
+         return res.status(400).json({ success: false, message: "pricing must be an array" });
       }
 
-      // Validate and resolve top-level pricing region references to ObjectIds
+      const variable = isVariable === true || isVariable === "true";
+
+      if (!variable && (!pricing || pricing.length === 0)) {
+         return res.status(400).json({ success: false, message: "Non-variable products must include pricing" });
+      }
+
       if (Array.isArray(pricing) && pricing.length > 0) {
          const processedPricing = [];
          for (const entry of pricing) {
             const { region: regionRef, price: regionPrice, discountMode, discountValue } = entry || {};
-            console.log(regionRef);
             if (!regionRef || regionPrice == null) {
-               return res.status(400).json({
-                  success: false,
-                  message: "Each pricing entry must include region and price",
-               });
+               return res.status(400).json({ success: false, message: "Each pricing entry must include region and price" });
             }
 
             let region;
@@ -595,10 +623,7 @@ export const createProduct = async (req, res) => {
             }
 
             if (!region) {
-               return res.status(400).json({
-                  success: false,
-                  message: `Region not found: ${regionRef}`,
-               });
+               return res.status(400).json({ success: false, message: `Region not found: ${regionRef}` });
             }
 
             processedPricing.push({
@@ -608,40 +633,24 @@ export const createProduct = async (req, res) => {
                discountValue: discountValue || 0,
             });
          }
-
          pricing = processedPricing;
       }
 
-      if (typeof variants === "string") {
-         variants = JSON.parse(variants);
-      }
+      if (typeof variants === "string") variants = JSON.parse(variants);
 
       if (!Array.isArray(variants)) {
-         return res.status(400).json({
-            success: false,
-            message: "variants must be an array",
-         });
+         return res.status(400).json({ success: false, message: "variants must be an array" });
       }
 
-      let processedVariants;
-      try {
-         processedVariants = await buildProcessedVariants(variants, req.files);
-      } catch (e) {
-         const status = e.status || 500;
-         return res.status(status).json({
-            success: false,
-            message: e.message,
-         });
-      }
+      // ── Variants ab URLs se (req.files ki zaroorat nahi) ──
+      const processedVariants = await buildVariantsFromUrls(variants);
 
-      const images = await uploadMany(req.files?.productImages, "products");
-      const thumbnails = await uploadMany(req.files?.thumbnails || req.files?.thumbnail, "products/thumbnails");
+      const images = parseUrlList(productImages);
+      const thumbnails = [assertCloudinaryUrl(thumbnail)];
 
       const slug = slugify(name, { lower: true, strict: true });
-
       let uniqueSlug = slug;
       let count = 1;
-
       while (await ProductModel.findOne({ slug: uniqueSlug })) {
          uniqueSlug = `${slug}-${count++}`;
       }
@@ -653,7 +662,7 @@ export const createProduct = async (req, res) => {
          categories,
          accessories,
          badge,
-         isVariable,
+         isVariable: variable,
          pricing,
          variants: processedVariants,
          stock,
@@ -661,15 +670,9 @@ export const createProduct = async (req, res) => {
          thumbnail: thumbnails,
       });
 
-      res.status(201).json({
-         success: true,
-         product,
-      });
+      res.status(201).json({ success: true, product });
    } catch (error) {
-      res.status(500).json({
-         success: false,
-         error: error.message,
-      });
+      res.status(error.status || 500).json({ success: false, message: error.message });
    }
 };
 
@@ -864,6 +867,46 @@ export const deleteProduct = async (req, res, next) => {
       res.status(200).json({
          success: true,
          message: "Product deleted successfully",
+      });
+   } catch (error) {
+      next(error);
+   }
+};
+
+// Bulk Delete Products
+export const bulkDeleteProducts = async (req, res, next) => {
+   try {
+      const { ids } = req.body;
+      console.log(ids);
+      if (!Array.isArray(ids) || ids.length === 0) {
+         return res.status(400).json({
+            success: false,
+            message: "Please provide product IDs",
+         });
+      }
+
+      const objectIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+      const slugs = ids.filter((id) => !mongoose.Types.ObjectId.isValid(id));
+
+      const query = [];
+
+      if (objectIds.length) {
+         query.push({ _id: { $in: objectIds } });
+      }
+
+      if (slugs.length) {
+         query.push({ slug: { $in: slugs } });
+      }
+
+      const result = await ProductModel.deleteMany({
+         $or: query,
+      });
+
+      return res.status(200).json({
+         success: true,
+         message: `${result.deletedCount} products deleted successfully`,
+         deletedCount: result.deletedCount,
       });
    } catch (error) {
       next(error);

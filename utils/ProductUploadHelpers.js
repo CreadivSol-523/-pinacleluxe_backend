@@ -1,6 +1,7 @@
 import { v2 as cloudinary } from "cloudinary";
 import mongoose from "mongoose";
 import RegionModel from "../models/RegionSchema.js";
+import { assertCloudinaryUrl } from "./cloudinaryUrl.js";
 
 // Images: only req.files — field names: productImages, v{variantIndex}_c{colorIndex}
 
@@ -218,6 +219,78 @@ export async function buildProcessedVariantsForUpdate(variants, files, previousV
             const uploaded = await uploadMany(files?.[fieldKey], "products/variants");
             const preserved = prev[vi]?.colors?.[ci]?.images?.filter(Boolean) ?? [];
             const images = uploaded.length > 0 ? uploaded : [...preserved];
+            processedColors.push({ hex: hexObj, images });
+         }
+      }
+
+      processedVariants.push({
+         material,
+         price: processedPrice,
+         colors: processedColors,
+      });
+   }
+
+   return processedVariants;
+}
+
+const fail = (message) => Object.assign(new Error(message), { status: 400 });
+
+const toUrl = (item) => (item && typeof item === "object" ? item.url : item);
+
+export async function buildVariantsFromUrls(variants) {
+   const processedVariants = [];
+
+   for (const variant of variants) {
+      const { material, price, colors } = variant || {};
+
+      if (!material || price == null) {
+         throw fail("Each variant must have material and price");
+      }
+      if (!Array.isArray(price)) {
+         throw fail("price must be an array");
+      }
+      if (colors != null && !Array.isArray(colors)) {
+         throw fail("colors must be an array");
+      }
+
+      // Price entries: bilkul purane code jaisi
+      const processedPrice = [];
+      for (const priceItem of price) {
+         const { region: regionRef, price: regionPrice, discountMode, discountValue } = priceItem || {};
+         if (!regionRef || regionPrice == null) {
+            throw fail("Each price entry must include a region and price");
+         }
+
+         const regionId = await resolveRegionId(regionRef);
+         if (!regionId) {
+            throw fail(`Region not found: ${regionRef}`);
+         }
+
+         processedPrice.push({
+            region: regionId,
+            price: Number(regionPrice),
+            discountMode,
+            discountValue: discountValue || 0,
+         });
+      }
+
+      // Colors: files ki jagah Cloudinary URLs
+      const processedColors = [];
+      if (Array.isArray(colors)) {
+         for (const color of colors) {
+            const hexVal = color?.hex;
+            let hexObj;
+            if (typeof hexVal === "string") {
+               hexObj = { code: hexVal.trim(), colorName: String(color.colorName || "").trim() };
+            } else if (hexVal && typeof hexVal === "object") {
+               hexObj = { code: String(hexVal.code || "").trim(), colorName: String(hexVal.colorName || "").trim() };
+            } else {
+               throw fail("Each color must include a hex.code");
+            }
+
+            const rawImages = Array.isArray(color.images) ? color.images : [];
+            const images = rawImages.map((img) => assertCloudinaryUrl(toUrl(img)));
+
             processedColors.push({ hex: hexObj, images });
          }
       }
